@@ -1,0 +1,90 @@
+
+╔═════════════════════════════════════════════════════════════════════════╗
+║                       🚀 QUICK REFERENCE CARD                           ║
+╚═════════════════════════════════════════════════════════════════════════╝
+
+📁 FILES OVERVIEW:
+──────────────────────────────────────────────────────────────────────────
+  main.pl              → Prolog backend (634 lines)
+  index.html           → React frontend (763 lines)
+  Dockerfile           → Container setup
+  docker-compose.yml   → Multi-container orchestration
+  nginx.conf           → Reverse proxy config
+  start.sh/.bat        → Quick start scripts
+  README.md            → Complete documentation
+
+🚀 LAUNCH COMMANDS:
+──────────────────────────────────────────────────────────────────────────
+  Development:    ./start.sh (or start.bat on Windows)
+  Docker:         ./docker-start.sh
+  Manual:         swipl -s main.pl -g "start_server(8080)" -t halt
+
+🌐 ACCESS URLS:
+──────────────────────────────────────────────────────────────────────────
+  Frontend:       http://localhost:3000 (dev) or http://localhost (docker)
+  Backend API:    http://localhost:8080/api
+  Health Check:   http://localhost:8080/api/career-paths
+
+📡 API ENDPOINTS:
+──────────────────────────────────────────────────────────────────────────
+  GET  /api/career-paths     → List all career paths
+  POST /api/generate-path    → Generate personalized path
+  GET  /api/progress         → Get user progress
+  POST /api/update-progress  → Mark skill complete
+  GET  /api/next-topic       → Get next skill
+  GET  /api/get-projects     → Get project ideas
+  POST /api/resources        → Get learning materials
+
+🎯 CAREER PATHS:
+──────────────────────────────────────────────────────────────────────────
+  1. Frontend Developer     (18 skills, 300 hours)
+  2. Backend Developer      (19 skills, 350 hours)
+  3. Full Stack Developer   (28 skills, 400 hours)
+  4. DSA Expert             (24 skills, 450 hours)
+  5. DevOps Engineer        (14 skills, 300 hours)
+
+🏆 GAMIFICATION:
+──────────────────────────────────────────────────────────────────────────
+  XP Points:      50-500 per skill
+  Levels:         1000 XP per level
+  Streaks:        Daily learning tracking
+  Badges:         Difficulty indicators
+  Confetti:       Celebration animations
+
+🛠️ TECH STACK:
+──────────────────────────────────────────────────────────────────────────
+  Backend:        SWI-Prolog 8+
+  Frontend:       React 18 (CDN)
+  Styling:        Tailwind CSS
+  Server:         Nginx
+  Deploy:         Docker + Docker Compose
+
+🔧 TROUBLESHOOTING:
+──────────────────────────────────────────────────────────────────────────
+  Backend not starting:
+    → Check: swipl --version
+    → Check: Port 8080 available
+    → View: docker-compose logs backend
+
+  Frontend can't connect:
+    → Verify backend is running
+    → Check API_BASE in index.html
+    → Check browser console for errors
+
+  Docker issues:
+    → Run: docker system prune -a
+    → Rebuild: docker-compose build --no-cache
+
+📞 SUPPORT:
+──────────────────────────────────────────────────────────────────────────
+  Documentation:  README.md (comprehensive guide)
+  Checklist:      DEPLOYMENT_CHECKLIST.md
+  File List:      files_summary.csv
+
+🎉 READY TO LAUNCH!
+──────────────────────────────────────────────────────────────────────────
+  Just run: ./docker-start.sh
+  And you're LIVE! 🚀
+
+═══════════════════════════════════════════════════════════════════════════
+Built with ❤️ to make education accessible to everyone

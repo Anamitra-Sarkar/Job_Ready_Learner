@@ -1,0 +1,11 @@
+File,Type,Lines,Purpose
+main.pl,Prolog,634,AI Knowledge Engine & API Backend
+index.html,React/HTML,763,Complete Interactive Frontend
+Dockerfile,Docker,13,Container Configuration
+docker-compose.yml,YAML,30,Multi-Container Orchestration
+nginx.conf,Config,62,Reverse Proxy Configuration
+README.md,Markdown,350+,Complete Documentation
+start.sh,Bash,45,Linux/Mac Quick Start
+start.bat,Batch,35,Windows Quick Start
+docker-start.sh,Bash,50,Docker Deployment Script
+DEPLOYMENT_CHECKLIST.md,Markdown,80,Pre-Launch Checklist
