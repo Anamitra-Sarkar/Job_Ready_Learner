@@ -1,0 +1,228 @@
+# ================================================
+# JOB READY PLATFORM - GIT IGNORE
+# ================================================
+
+# -------------------- ENVIRONMENT VARIABLES --------------------
+.env
+.env.local
+.env.production
+.env.development
+.env.test
+*.env
+.envrc
+
+# -------------------- SECRETS & CREDENTIALS --------------------
+secrets/
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+*.der
+credentials.json
+service-account.json
+firebase-adminsdk*.json
+.firebase/
+
+# -------------------- DATA & DATABASES --------------------
+data/
+*.db
+*.sqlite
+*.sqlite3
+user_data.db
+backups/
+*.backup
+*.dump
+*.sql.gz
+
+# -------------------- LOGS --------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# -------------------- DOCKER --------------------
+.docker/
+*.tar
+.dockerignore.swp
+docker-compose.override.yml
+
+# -------------------- NODE MODULES --------------------
+node_modules/
+jspm_packages/
+bower_components/
+
+# -------------------- BUILD & DIST --------------------
+dist/
+build/
+out/
+.next/
+.nuxt/
+.vuepress/dist
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+
+# -------------------- CACHE & TEMP --------------------
+.cache/
+.tmp/
+tmp/
+temp/
+*.tmp
+*.cache
+.sass-cache/
+.eslintcache
+.stylelintcache
+.parcel-cache/
+
+# -------------------- OPERATING SYSTEMS --------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# -------------------- IDEs & EDITORS --------------------
+# VS Code
+.vscode/
+*.code-workspace
+.history/
+
+# JetBrains IDEs
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+.idea_modules/
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+Session.vim
+Sessionx.vim
+.netrwhist
+*~
+tags
+[._]*.un~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# -------------------- TESTING --------------------
+coverage/
+.nyc_output/
+*.lcov
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.hypothesis/
+pytestdebug.log
+
+# -------------------- PROLOG SPECIFIC --------------------
+*.qlf
+*.qly
+*.sav
+*.state
+*.dump
+
+# -------------------- SSL CERTIFICATES --------------------
+ssl/
+*.key
+*.crt
+*.pem
+*.csr
+*.cer
+*.p7b
+*.p7c
+*.p7r
+
+# -------------------- BACKUP FILES --------------------
+*.bak
+*.backup
+*.old
+*.orig
+*.swp
+*.swo
+*~
+
+# -------------------- MISC --------------------
+.env.backup
+pip-log.txt
+pip-delete-this-directory.txt
+.Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.installed.cfg
+*.egg
+MANIFEST
+
+# -------------------- PROJECT SPECIFIC --------------------
+# Add any project-specific ignores here
+monitoring/data/
+grafana-data/
+prometheus-data/
+.monitoring/
+
+# -------------------- KEEP THESE --------------------
+# Important: Keep these files tracked
+!.gitkeep
+!.env.example
+!README.md
+!LICENSE
