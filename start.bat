@@ -1,40 +1,79 @@
 @echo off
-echo Starting Job Ready Platform...
+echo ================================================================
+echo            STARTING JOB READY PLATFORM
+echo ================================================================
 echo.
 
-REM Check if SWI-Prolog is installed
-where swipl >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo SWI-Prolog not found!
-    echo Install from: https://www.swi-prolog.org/download/stable
+REM Check SWI-Prolog
+where swipl >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [ERROR] SWI-Prolog is not installed!
+    echo Install from: https://www.swi-prolog.org
+    pause
+    exit /b 1
+)
+echo [OK] SWI-Prolog found!
+
+REM Check Python (try python3 first, then python)
+set PYTHON_CMD=
+where python3 >nul 2>nul
+if %errorlevel% equ 0 (
+    set PYTHON_CMD=python3
+) else (
+    where python >nul 2>nul
+    if %errorlevel% equ 0 (
+        set PYTHON_CMD=python
+    ) else (
+        echo [ERROR] Python is not installed!
+        echo Install from: https://www.python.org
+        pause
+        exit /b 1
+    )
+)
+echo [OK] Python found: %PYTHON_CMD%
+
+REM Check files
+if not exist "main.pl" (
+    echo [ERROR] main.pl not found!
     pause
     exit /b 1
 )
 
-REM Start Prolog backend
-echo Starting Prolog backend on port 8080...
-start /B swipl -s main.pl -g "start_server(8080)" -t halt
+if not exist "index.html" (
+    echo [ERROR] index.html not found!
+    pause
+    exit /b 1
+)
+echo [OK] All required files found!
+echo.
 
-REM Wait for backend to start
+echo ================================================================
+echo Starting Backend (Prolog) on port 8080...
+echo ================================================================
+start "Job Ready Backend" swipl -s main.pl
+
 timeout /t 3 /nobreak >nul
 
-REM Start frontend
-echo Starting frontend on port 3000...
-start /B python -m http.server 3000
+echo.
+echo ================================================================
+echo Starting Frontend (HTTP Server) on port 3000...
+echo ================================================================
+start "Job Ready Frontend" %PYTHON_CMD% -m http.server 3000
 
 timeout /t 2 /nobreak >nul
 
 echo.
-echo ==================================
-echo Job Ready Platform is LIVE!
-echo ==================================
+echo ================================================================
+echo              PLATFORM IS READY!
+echo ================================================================
 echo.
-echo Frontend: http://localhost:3000
-echo Backend:  http://localhost:8080/api
+echo Open in browser: http://localhost:3000
+echo Backend API: http://localhost:8080/api
 echo.
-echo Press any key to stop...
+echo Press any key to stop servers and exit...
 pause >nul
 
-REM Stop processes
-taskkill /F /IM swipl.exe >nul 2>&1
-taskkill /F /IM python.exe >nul 2>&1
+taskkill /FI "WINDOWTITLE eq Job Ready Backend*" /F >nul 2>nul
+taskkill /FI "WINDOWTITLE eq Job Ready Frontend*" /F >nul 2>nul
+
+echo Servers stopped!
