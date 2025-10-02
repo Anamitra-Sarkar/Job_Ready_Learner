@@ -45,30 +45,25 @@ cd Job_Ready_Learner
 2. **Make scripts executable:**
 chmod +x start.sh docker-start.sh
 
-text
 
 3. **Start the platform:**
 
 **Linux/Mac:**
 ./start.sh
 
-text
 
 **Windows:**
 start.bat
 
-text
 
 4. **Open in browser:**
 http://localhost:3000
 
-text
 
 ### Docker Deployment
 
 ./docker-start.sh
 
-text
 
 Then open: `http://localhost`
 
