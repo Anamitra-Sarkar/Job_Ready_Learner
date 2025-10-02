@@ -7,6 +7,9 @@
     <meta name="theme-color" content="#667eea">
     <title>Job Ready Platform - Learn Code, Get Hired</title>
 
+    <!-- Configuration (LOAD FIRST) -->
+    <script src="config.js"></script>
+
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -224,7 +227,6 @@
             background: rgba(255,255,255,0.15);
         }
 
-        /* Mobile responsive */
         @media (max-width: 768px) {
             .settings-btn {
                 width: 45px;
@@ -261,7 +263,6 @@
             }
         }
 
-        /* Loading spinner */
         .spinner {
             border: 3px solid rgba(255, 255, 255, 0.3);
             border-radius: 50%;
@@ -275,7 +276,6 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Scrollbar styling */
         ::-webkit-scrollbar {
             width: 10px;
         }
@@ -300,28 +300,18 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // Initialize Firebase
-        const firebaseConfig = {
-            apiKey: "AIzaSyDEAOr3iqU6TJZ6uztMvC5mquZECPcBkkE",
-            authDomain: "fir-config-d3c36.firebaseapp.com",
-            projectId: "fir-config-d3c36",
-            storageBucket: "fir-config-d3c36.firebasestorage.app",
-            messagingSenderId: "477435579926",
-            appId: "1:477435579926:web:d370e9fb5a3c5a05316f37"
-        };
-
-        firebase.initializeApp(firebaseConfig);
+        // Initialize Firebase with config from config.js
+        firebase.initializeApp(AppConfig.firebase);
         const auth = firebase.auth();
 
-        // API Configuration - Environment aware
-        const getApiBase = () => {
-            const hostname = window.location.hostname;
-            if (hostname === 'localhost' || hostname === '127.0.0.1') {
-                return 'http://localhost:8080/api';
-            }
-            return '/api';
-        };
-        const API_BASE = getApiBase();
+        // Use API configuration from config.js
+        const API_BASE = AppConfig.api.baseUrl;
+
+        // Log initialization in development
+        if (AppConfig.isDevelopment) {
+            console.log('🔥 Firebase initialized with project:', AppConfig.firebase.projectId);
+            console.log('🌐 API Base URL:', API_BASE);
+        }
 
         // Error Boundary Component
         class ErrorBoundary extends React.Component {
@@ -336,6 +326,9 @@
 
             componentDidCatch(error, errorInfo) {
                 console.error('Error caught by boundary:', error, errorInfo);
+                if (AppConfig.features.enableErrorReporting) {
+                    // TODO: Send to error reporting service (Sentry, etc.)
+                }
             }
 
             render() {
@@ -395,6 +388,9 @@
                     setUser(firebaseUser);
                     setLoading(false);
                     if (firebaseUser) {
+                        if (AppConfig.features.enableLogging) {
+                            console.log('👤 User authenticated:', firebaseUser.email);
+                        }
                         fetchCareerPaths();
                         fetchProgress(firebaseUser.uid);
                     } else {
@@ -455,10 +451,12 @@
                 }
             };
 
-            // Fetch career paths
-            const fetchCareerPaths = async () => {
+            // Fetch career paths with retry logic
+            const fetchCareerPaths = async (retries = AppConfig.api.retries) => {
                 try {
-                    const response = await fetch(`${API_BASE}/career-paths`);
+                    const response = await fetch(`${API_BASE}/career-paths`, {
+                        timeout: AppConfig.api.timeout
+                    });
                     if (!response.ok) throw new Error('Backend not reachable');
                     const data = await response.json();
                     if (data.success) {
@@ -466,7 +464,11 @@
                     }
                 } catch (error) {
                     console.error('Error fetching career paths:', error);
-                    showNotification('❌ Backend not reachable. Please start the backend server.', 'error');
+                    if (retries > 0) {
+                        setTimeout(() => fetchCareerPaths(retries - 1), 2000);
+                    } else {
+                        showNotification('❌ Backend not reachable. Please start the backend server.', 'error');
+                    }
                 }
             };
 
@@ -641,7 +643,6 @@
 
             return (
                 <div className="min-h-screen">
-                    {/* Settings Button */}
                     <button 
                         className="settings-btn"
                         onClick={() => { setModalType('settings'); setShowModal(true); }}
@@ -650,14 +651,12 @@
                         <i className="fas fa-cog"></i>
                     </button>
 
-                    {/* Notification */}
                     {notification && (
                         <div className={`notification ${notification.type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white`}>
                             {notification.message}
                         </div>
                     )}
 
-                    {/* Screens */}
                     {screen === 'welcome' && (
                         <WelcomeScreen careerPaths={careerPaths} onSelectPath={generatePath} user={user} />
                     )}
@@ -685,7 +684,6 @@
                         />
                     )}
 
-                    {/* Modals */}
                     {showModal && modalType === 'auth' && (
                         <AuthModal 
                             mode={authMode}
@@ -825,7 +823,6 @@
                         </div>
 
                         <div className="space-y-4">
-                            {/* User Info */}
                             {user ? (
                                 <div className="bg-white bg-opacity-10 rounded-lg p-4">
                                     <p className="text-sm opacity-75 mb-1">Logged in as:</p>
@@ -837,7 +834,6 @@
                                 </div>
                             )}
 
-                            {/* Theme Toggle */}
                             <button
                                 onClick={onToggleTheme}
                                 className="w-full bg-white bg-opacity-20 py-3 rounded-lg font-semibold hover:bg-opacity-30 transition-all flex items-center justify-between px-4"
@@ -849,7 +845,6 @@
                                 <span className="capitalize">{theme}</span>
                             </button>
 
-                            {/* Auth Buttons */}
                             {user ? (
                                 <button
                                     onClick={onLogout}
@@ -872,6 +867,13 @@
                                         <i className="fas fa-user-plus mr-2"></i>Sign Up
                                     </button>
                                 </>
+                            )}
+
+                            {AppConfig.isDevelopment && (
+                                <div className="bg-yellow-500 bg-opacity-20 rounded-lg p-3 text-xs">
+                                    <i className="fas fa-info-circle mr-1"></i>
+                                    Development Mode
+                                </div>
                             )}
                         </div>
                     </div>
@@ -948,7 +950,9 @@
             );
         }
 
-        // Dashboard Component
+        // Dashboard Component (keeping rest of components same as before for brevity)
+        // [Include Dashboard, LearningScreen, ProjectModal components - same as previous version]
+
         function Dashboard({ learningPath, progress, xp, streak, level, selectedPath, user, onStartLearning, onViewProjects }) {
             return (
                 <div className="min-h-screen p-4 sm:p-8 pt-20">
@@ -1079,7 +1083,7 @@
             );
         }
 
-        // Learning Screen Component
+        // LearningScreen Component
         function LearningScreen({ topic, resources, onComplete, onBack }) {
             const [currentResourceIndex, setCurrentResourceIndex] = useState(0);
 
