@@ -1,24 +1,39 @@
 @echo off
 setlocal enabledelayedexpansion
 
+REM ================================================================
+REM          JOB READY PLATFORM - WINDOWS STARTUP SCRIPT v1.0.0
+REM ================================================================
+
 echo ================================================================
 echo            STARTING JOB READY PLATFORM
 echo ================================================================
 echo.
+
+REM Configuration
+set BACKEND_PORT=8080
+set FRONTEND_PORT=3000
+set MAX_RETRIES=15
 
 REM Check SWI-Prolog
 where swipl >nul 2>nul
 if %errorlevel% neq 0 (
     echo [ERROR] SWI-Prolog is not installed!
     echo.
-    echo Install from: https://www.swi-prolog.org/download/stable
+    echo Download from: https://www.swi-prolog.org/download/stable
     echo.
     pause
     exit /b 1
 )
-echo [OK] SWI-Prolog found!
 
-REM Check Python (try python3 first, then python)
+echo [OK] SWI-Prolog found
+for /f "delims=" %%i in ('swipl --version') do (
+    echo     Version: %%i
+    goto :python_check
+)
+
+:python_check
+REM Check Python
 set PYTHON_CMD=
 where python3 >nul 2>nul
 if %errorlevel% equ 0 (
@@ -30,19 +45,21 @@ if %errorlevel% equ 0 (
     ) else (
         echo [ERROR] Python is not installed!
         echo.
-        echo Install from: https://www.python.org/downloads/
+        echo Download from: https://www.python.org/downloads/
         echo.
         pause
         exit /b 1
     )
 )
-echo [OK] Python found: %PYTHON_CMD%
 
-REM Check files
+echo [OK] Python found
+for /f "delims=" %%i in ('%PYTHON_CMD% --version') do echo     Version: %%i
+
+REM Check required files
 if not exist "main.pl" (
     echo [ERROR] main.pl not found in current directory!
     echo.
-    echo Make sure you're in the project directory.
+    echo Make sure you're in the project root directory.
     echo.
     pause
     exit /b 1
@@ -51,58 +68,89 @@ if not exist "main.pl" (
 if not exist "index.html" (
     echo [ERROR] index.html not found in current directory!
     echo.
-    echo Make sure you're in the project directory.
+    echo Make sure you're in the project root directory.
     echo.
     pause
     exit /b 1
 )
-echo [OK] All required files found!
 
-REM Create data directory
-if not exist "data" mkdir data
+if not exist "config.js" (
+    echo [WARNING] config.js not found - Firebase config may not work
+)
 
+echo [OK] All required files found
 echo.
-echo Checking for existing processes on ports 8080 and 3000...
+
+REM Create necessary directories
+if not exist "data" mkdir data
+if not exist "logs" mkdir logs
+if not exist "backups" mkdir backups
+echo [OK] Directories created: data\, logs\, backups\
+echo.
+
+echo Checking for existing processes on ports %BACKEND_PORT% and %FRONTEND_PORT%...
 
 REM Kill existing processes on ports
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8080') do taskkill /F /PID %%a >nul 2>nul
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000') do taskkill /F /PID %%a >nul 2>nul
-
-echo.
-echo ================================================================
-echo Starting Backend (Prolog) on port 8080...
-echo ================================================================
-start "Job Ready Backend" /MIN swipl -s main.pl
-
-echo.
-echo Waiting for backend to initialize...
-timeout /t 5 /nobreak >nul
-
-REM Check if backend is running
-set /a attempts=0
-:check_backend
-set /a attempts+=1
-curl -s http://localhost:8080/api/career-paths >nul 2>nul
-if %errorlevel% equ 0 (
-    echo [OK] Backend started successfully!
-    goto backend_ready
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :%BACKEND_PORT%') do (
+    taskkill /F /PID %%a >nul 2>nul
 )
-if %attempts% geq 10 (
-    echo [ERROR] Backend failed to start!
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :%FRONTEND_PORT%') do (
+    taskkill /F /PID %%a >nul 2>nul
+)
+
+echo [OK] Ports cleared
+echo.
+echo ================================================================
+echo Starting Backend (Prolog) on port %BACKEND_PORT%...
+echo ================================================================
+echo.
+
+REM Start backend
+start "Job Ready Backend" /MIN cmd /c "swipl -s main.pl > logs\backend.log 2>&1"
+
+echo Waiting for backend to initialize...
+set /a RETRY_COUNT=0
+
+:wait_backend
+set /a RETRY_COUNT+=1
+if %RETRY_COUNT% gtr %MAX_RETRIES% (
+    echo [ERROR] Backend failed to start after %MAX_RETRIES% attempts!
+    echo.
+    echo Check logs\backend.log for details
+    echo.
     taskkill /FI "WINDOWTITLE eq Job Ready Backend*" /F >nul 2>nul
     pause
     exit /b 1
 )
-echo    Attempt %attempts%/10...
+
+curl -s http://localhost:%BACKEND_PORT%/api/health >nul 2>nul
+if %errorlevel% equ 0 (
+    echo [OK] Backend started successfully!
+    goto :backend_ready
+)
+
+echo    Attempt %RETRY_COUNT%/%MAX_RETRIES%...
 timeout /t 2 /nobreak >nul
-goto check_backend
+goto :wait_backend
 
 :backend_ready
 echo.
+echo Testing backend endpoints...
+curl -s http://localhost:%BACKEND_PORT%/api/career-paths | findstr "success" >nul 2>nul
+if %errorlevel% equ 0 (
+    echo [OK] API endpoints working
+) else (
+    echo [WARNING] API test inconclusive
+)
+
+echo.
 echo ================================================================
-echo Starting Frontend (HTTP Server) on port 3000...
+echo Starting Frontend (HTTP Server) on port %FRONTEND_PORT%...
 echo ================================================================
-start "Job Ready Frontend" /MIN %PYTHON_CMD% -m http.server 3000
+echo.
+
+REM Start frontend
+start "Job Ready Frontend" /MIN cmd /c "%PYTHON_CMD% -m http.server %FRONTEND_PORT% > logs\frontend.log 2>&1"
 
 timeout /t 2 /nobreak >nul
 
@@ -112,18 +160,29 @@ echo ================================================================
 echo              PLATFORM IS READY!
 echo ================================================================
 echo.
-echo Open in browser: http://localhost:3000
+echo Open in browser: http://localhost:%FRONTEND_PORT%
 echo.
-echo Backend API: http://localhost:8080/api
-echo Data stored in: .\data\
+echo Backend API:    http://localhost:%BACKEND_PORT%/api
+echo Health Check:   http://localhost:%BACKEND_PORT%/api/health
+echo Data Directory: .\data\
+echo Logs:           .\logs\
+echo.
+echo ================================================================
+echo Useful Commands:
+echo ================================================================
+echo View backend logs:  type logs\backend.log
+echo View frontend logs: type logs\frontend.log
+echo Run backup:         backup.bat
+echo Check health:       curl http://localhost:%BACKEND_PORT%/api/health
 echo.
 echo Press any key to stop servers and exit...
 pause >nul
 
+REM Cleanup
 echo.
-echo Stopping servers...
+echo Shutting down servers...
 taskkill /FI "WINDOWTITLE eq Job Ready Backend*" /F >nul 2>nul
 taskkill /FI "WINDOWTITLE eq Job Ready Frontend*" /F >nul 2>nul
 
-echo Servers stopped!
+echo [OK] All services stopped!
 timeout /t 2 /nobreak >nul
