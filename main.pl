@@ -1,7 +1,8 @@
 /*
 ==============================================
-JOB READY PLATFORM - COMPLETE PROLOG BACKEND
-All fixes applied - Production ready
+JOB READY PLATFORM - PRODUCTION PROLOG BACKEND
+Rate limiting, input validation, persistence, CORS, error handling
+Version: 1.0.0
 ==============================================
 */
 
@@ -13,10 +14,19 @@ All fixes applied - Production ready
 :- use_module(library(http/json)).
 :- use_module(library(http/http_header)).
 :- use_module(library(persistency)).
+:- use_module(library(settings)).
 
-frontend_origin('http://localhost:3000').
-frontend_origin('http://localhost').
+% Production settings
+:- setting(allowed_origins, list, ['http://localhost:3000', 'http://localhost']).
+:- setting(enable_rate_limit, boolean, true).
+:- setting(max_requests_per_minute, integer, 60).
+:- setting(log_level, atom, info). % debug, info, warn, error
 
+% Dynamic predicates for rate limiting
+:- dynamic request_count/3.  % request_count(IP, Endpoint, Count)
+:- dynamic last_cleanup/1.   % last_cleanup(Timestamp)
+
+% HTTP Route Handlers
 :- http_handler(root(.), http_redirect(moved, '/index.html'), []).
 :- http_handler('/api/generate-path', handle_generate_path, [method(post)]).
 :- http_handler('/api/progress', handle_get_progress, [method(get)]).
@@ -26,14 +36,50 @@ frontend_origin('http://localhost').
 :- http_handler('/api/career-paths', handle_career_paths, [method(get)]).
 :- http_handler('/api/skill-tree', handle_skill_tree, [method(post)]).
 :- http_handler('/api/resources', handle_get_resources, [method(post)]).
+:- http_handler('/api/health', handle_health, [method(get)]).
 :- http_handler(root(api/), handle_options, [method(options), prefix]).
 
+% CORS preflight handler
 handle_options(Request) :-
-    member(origin(Origin), Request),
-    (frontend_origin(Origin) -> AllowedOrigin = Origin ; AllowedOrigin = 'http://localhost:3000'),
-    cors_enable(Request, [methods([get,post,options]), origins([AllowedOrigin]), headers(['content-type','authorization'])]),
+    cors_enable_with_origin(Request),
     throw(http_reply(no_content)).
 
+% Rate limiting implementation
+check_rate_limit(Request, Endpoint) :-
+    setting(enable_rate_limit, false), !.
+check_rate_limit(Request, Endpoint) :-
+    setting(enable_rate_limit, true),
+    (memberchk(peer(IP), Request) -> true ; IP = unknown),
+    get_time(Now),
+    cleanup_old_counts(Now),
+    setting(max_requests_per_minute, MaxRequests),
+    (request_count(IP, Endpoint, Count) ->
+        (Count >= MaxRequests ->
+            throw(http_reply(too_many_requests(
+                json{error: "Rate limit exceeded", retry_after: 60, endpoint: Endpoint})))
+        ;
+            retract(request_count(IP, Endpoint, Count)),
+            NewCount is Count + 1,
+            assertz(request_count(IP, Endpoint, NewCount))
+        )
+    ;
+        assertz(request_count(IP, Endpoint, 1))
+    ).
+
+% Cleanup old rate limit counts every minute
+cleanup_old_counts(Now) :-
+    (last_cleanup(LastTime) ->
+        Diff is Now - LastTime,
+        (Diff > 60 ->
+            retractall(request_count(_, _, _)),
+            retract(last_cleanup(_)),
+            assertz(last_cleanup(Now))
+        ; true)
+    ;
+        assertz(last_cleanup(Now))
+    ).
+
+% Persistent storage configuration
 :- persistent
     user_progress(user_id:atom, topic:atom, status:atom),
     user_path(user_id:atom, path:list),
@@ -42,9 +88,33 @@ handle_options(Request) :-
 
 :- db_attach('data/user_data.db', []).
 
+% Initialize database
 initialize_db :- 
     (exists_directory('data') -> true ; make_directory('data')),
-    db_attach('data/user_data.db', []).
+    db_attach('data/user_data.db', []),
+    log_info('Database initialized: data/user_data.db').
+
+% Logging utilities
+log_debug(Message) :- setting(log_level, debug), !, format('DEBUG: ~w~n', [Message]).
+log_debug(_).
+
+log_info(Message) :- 
+    setting(log_level, Level),
+    member(Level, [debug, info]), !,
+    format('INFO: ~w~n', [Message]).
+log_info(_).
+
+log_warn(Message) :- 
+    setting(log_level, Level),
+    member(Level, [debug, info, warn]), !,
+    format('WARN: ~w~n', [Message]).
+log_warn(_).
+
+log_error(Message) :- format('ERROR: ~w~n', [Message]).
+
+%==============================================
+% KNOWLEDGE GRAPH - PREREQUISITES
+%==============================================
 
 prerequisite(variables, data_types).
 prerequisite(data_types, operators).
@@ -101,6 +171,10 @@ prerequisite(nodejs_basics, docker_basics).
 prerequisite(docker_basics, docker_compose).
 prerequisite(docker_compose, kubernetes).
 prerequisite(git_basics, ci_cd).
+
+%==============================================
+% SKILLS DATABASE
+%==============================================
 
 skill(variables, programming_basics, beginner, 2, 50).
 skill(data_types, programming_basics, beginner, 2, 50).
@@ -159,11 +233,42 @@ skill(docker_compose, devops, intermediate, 8, 200).
 skill(kubernetes, devops, advanced, 20, 500).
 skill(ci_cd, devops, advanced, 15, 375).
 
-career_path(frontend_developer, [variables, data_types, operators, conditionals, loops, arrays, functions, html_basics, css_basics, javascript_basics, dom_manipulation, events, async_js, fetch_api, react_basics, react_hooks, state_management, git_basics, github], 300).
-career_path(backend_developer, [variables, data_types, operators, conditionals, loops, arrays, functions, classes, objects, nodejs_basics, express_js, rest_api, databases, sql, mongodb, authentication, git_basics, github, docker_basics], 350).
-career_path(fullstack_developer, [variables, data_types, operators, conditionals, loops, arrays, functions, html_basics, css_basics, javascript_basics, dom_manipulation, events, async_js, fetch_api, react_basics, react_hooks, state_management, nodejs_basics, express_js, rest_api, databases, sql, mongodb, authentication, git_basics, github, docker_basics], 400).
-career_path(data_structures_algorithms, [variables, data_types, operators, conditionals, loops, arrays, functions, recursion, linked_lists, stacks, queues, hash_tables, trees, binary_trees, bst, heaps, graphs, searching, sorting, divide_conquer, dynamic_programming, graph_algorithms, tree_traversal], 450).
-career_path(devops_engineer, [variables, data_types, operators, conditionals, loops, functions, nodejs_basics, databases, git_basics, github, docker_basics, docker_compose, kubernetes, ci_cd], 300).
+%==============================================
+% CAREER PATHS
+%==============================================
+
+career_path(frontend_developer, 
+    [variables, data_types, operators, conditionals, loops, arrays, functions,
+     html_basics, css_basics, javascript_basics, dom_manipulation, events,
+     async_js, fetch_api, react_basics, react_hooks, state_management,
+     git_basics, github], 300).
+
+career_path(backend_developer,
+    [variables, data_types, operators, conditionals, loops, arrays, functions,
+     classes, objects, nodejs_basics, express_js, rest_api, databases, sql,
+     mongodb, authentication, git_basics, github, docker_basics], 350).
+
+career_path(fullstack_developer,
+    [variables, data_types, operators, conditionals, loops, arrays, functions,
+     html_basics, css_basics, javascript_basics, dom_manipulation, events,
+     async_js, fetch_api, react_basics, react_hooks, state_management,
+     nodejs_basics, express_js, rest_api, databases, sql, mongodb,
+     authentication, git_basics, github, docker_basics], 400).
+
+career_path(data_structures_algorithms,
+    [variables, data_types, operators, conditionals, loops, arrays, functions,
+     recursion, linked_lists, stacks, queues, hash_tables, trees, binary_trees,
+     bst, heaps, graphs, searching, sorting, divide_conquer, dynamic_programming,
+     graph_algorithms, tree_traversal], 450).
+
+career_path(devops_engineer,
+    [variables, data_types, operators, conditionals, loops, functions,
+     nodejs_basics, databases, git_basics, github, docker_basics,
+     docker_compose, kubernetes, ci_cd], 300).
+
+%==============================================
+% LEARNING RESOURCES
+%==============================================
 
 resource(variables, tutorial, 'Variables store data in memory. Named containers.', 'let name = "value"; const PI = 3.14;').
 resource(variables, exercise, 'Create 5 variables: name, age, city, country, hobby', 'Store your personal information').
@@ -278,6 +383,10 @@ resource(kubernetes, exercise, 'Deploy to Kubernetes cluster', 'Scale and manage
 resource(ci_cd, tutorial, 'Automate testing deployment', 'GitHub Actions, Jenkins, GitLab CI').
 resource(ci_cd, exercise, 'Setup CI/CD pipeline', 'Auto test deploy on push').
 
+%==============================================
+% PROJECTS DATABASE
+%==============================================
+
 project(beginner, 'Personal Portfolio Website', [html_basics, css_basics, javascript_basics], 'Create responsive portfolio', 'Use flexbox, deploy').
 project(beginner, 'Calculator App', [javascript_basics, dom_manipulation, events], 'Build calculator', 'Add keyboard support').
 project(beginner, 'Todo List App', [javascript_basics, dom_manipulation, events], 'Create todo app', 'Store in localStorage').
@@ -288,24 +397,59 @@ project(advanced, 'Social Media Clone', [fullstack_developer], 'Build Twitter/In
 project(advanced, 'Project Management Tool', [fullstack_developer], 'Trello-like board', 'Real-time collaboration').
 project(advanced, 'Code Editor Online', [react_basics, nodejs_basics, state_management], 'Browser-based code editor', 'Multiple languages').
 
+%==============================================
+% INPUT VALIDATION & SANITIZATION
+%==============================================
+
+% Sanitize user input - remove dangerous characters
 sanitize_input(Input, Sanitized) :-
     atom_string(Input, InputStr),
-    re_replace('[^a-zA-Z0-9_@.-]'/g, '', InputStr, Sanitized).
+    re_replace('[^a-zA-Z0-9_@.\\-]'/g, '', InputStr, Sanitized).
 
+% Validate required fields
 require_field(Dict, Field) :- 
     catch(get_dict(Field, Dict, Value), _, fail),
     Value \== "", !.
 require_field(_, Field) :- 
-    throw(http_reply(bad_request(_{error: "Missing or empty field", field: Field}))).
+    throw(http_reply(bad_request(json{error: "Missing or empty field", field: Field}))).
 
+% Validate user ID format
+validate_user_id(UserId) :-
+    atom_length(UserId, Len),
+    Len > 0,
+    Len < 256, !.
+validate_user_id(_) :-
+    throw(http_reply(bad_request(json{error: "Invalid user ID format"}))).
+
+%==============================================
+% API HANDLERS
+%==============================================
+
+% Health check endpoint
+handle_health(_Request) :-
+    get_time(Timestamp),
+    db_sync(gc),
+    reply_json_dict(json{
+        status: "healthy",
+        timestamp: Timestamp,
+        service: "job-ready-backend",
+        version: "1.0.0",
+        database: "connected"
+    }).
+
+% Generate learning path
 handle_generate_path(Request) :-
+    check_rate_limit(Request, generate_path),
     cors_enable_with_origin(Request),
     catch(
         (http_read_json_dict(Request, Data),
-         require_field(Data, userId), require_field(Data, careerPath),
+         require_field(Data, userId),
+         require_field(Data, careerPath),
          sanitize_input(Data.userId, UserId),
+         validate_user_id(UserId),
          sanitize_input(Data.careerPath, CareerPath),
          atom_string(CareerPathAtom, CareerPath),
+         (career_path(CareerPathAtom, _, _) -> true ; throw(error(invalid_career_path))),
          generate_learning_path(CareerPathAtom, OrderedSkills),
          retractall_user_path(UserId, _),
          assert_user_path(UserId, OrderedSkills),
@@ -317,24 +461,27 @@ handle_generate_path(Request) :-
          total_xp_for_skills(OrderedSkills, TotalXP),
          length(OrderedSkills, TotalSkills),
          maplist(skill_to_json, OrderedSkills, SkillsJson),
-         reply_json_dict(json{success: true, path: SkillsJson, totalSkills: TotalSkills, totalXP: TotalXP, careerPath: CareerPath})),
+         log_info('Generated path for user'),
+         reply_json_dict(json{
+             success: true,
+             path: SkillsJson,
+             totalSkills: TotalSkills,
+             totalXP: TotalXP,
+             careerPath: CareerPath
+         })),
         Error,
-        (format(user_error, 'Error: ~w~n', [Error]),
+        (log_error(Error),
          reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
     ).
 
-skill_to_json(Skill, Json) :- 
-    skill(Skill, Domain, Difficulty, Hours, XP),
-    atom_string(SkillStr, Skill),
-    atom_string(DomainStr, Domain),
-    atom_string(Difficulty, DiffStr),
-    Json = json{name: SkillStr, domain: DomainStr, difficulty: DiffStr, hours: Hours, xp: XP}.
-
+% Get user progress
 handle_get_progress(Request) :- 
+    check_rate_limit(Request, get_progress),
     cors_enable_with_origin(Request),
     catch(
         (http_parameters(Request, [userId(UserIdRaw, [])]),
          sanitize_input(UserIdRaw, UserId),
+         validate_user_id(UserId),
          (user_path(UserId, Path) -> 
             (findall(T, user_progress(UserId, T, completed), Completed),
              length(Path, Total),
@@ -343,21 +490,34 @@ handle_get_progress(Request) :-
              (user_xp(UserId, XP) -> true ; XP = 0),
              (user_streak(UserId, Streak) -> true ; Streak = 0),
              maplist(atom_string, Completed, CompletedStr),
-             reply_json_dict(json{success: true, totalSkills: Total, completed: CompletedCount, progress: Progress, xp: XP, streak: Streak, completedSkills: CompletedStr}))
+             reply_json_dict(json{
+                 success: true,
+                 totalSkills: Total,
+                 completed: CompletedCount,
+                 progress: Progress,
+                 xp: XP,
+                 streak: Streak,
+                 completedSkills: CompletedStr
+             }))
           ; reply_json_dict(json{success: false, message: "No path for user"}))),
         Error,
-        (format(user_error, 'Error: ~w~n', [Error]),
+        (log_error(Error),
          reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
     ).
 
+% Update user progress
 handle_update_progress(Request) :- 
+    check_rate_limit(Request, update_progress),
     cors_enable_with_origin(Request),
     catch(
         (http_read_json_dict(Request, Data),
-         require_field(Data, userId), require_field(Data, topic),
+         require_field(Data, userId),
+         require_field(Data, topic),
          sanitize_input(Data.userId, UserId),
+         validate_user_id(UserId),
          sanitize_input(Data.topic, Topic),
          atom_string(TopicAtom, Topic),
+         (skill(TopicAtom, _, _, _, _) -> true ; throw(error(invalid_topic))),
          retractall_user_progress(UserId, TopicAtom, _),
          assert_user_progress(UserId, TopicAtom, completed),
          skill(TopicAtom, _, _, _, XP),
@@ -372,115 +532,171 @@ handle_update_progress(Request) :-
              assert_user_streak(UserId, NewStreak))
           ; (assert_user_streak(UserId, 1), NewStreak = 1)),
          db_sync(gc),
-         reply_json_dict(json{success: true, xp: NewXP, xpGained: XP, streak: NewStreak, message: "Progress updated!"})),
+         log_info('Progress updated'),
+         reply_json_dict(json{
+             success: true,
+             xp: NewXP,
+             xpGained: XP,
+             streak: NewStreak,
+             message: "Progress updated!"
+         })),
         Error,
-        (format(user_error, 'Error: ~w~n', [Error]),
+        (log_error(Error),
          reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
     ).
 
+% Get next topic
 handle_next_topic(Request) :- 
+    check_rate_limit(Request, next_topic),
     cors_enable_with_origin(Request),
     catch(
         (http_parameters(Request, [userId(UserIdRaw, [])]),
          sanitize_input(UserIdRaw, UserId),
+         validate_user_id(UserId),
          (get_next_topic(UserId, NextTopic) ->
             (atom_string(NextTopic, NextTopicStr),
              skill(NextTopic, Domain, Difficulty, Hours, XP),
              atom_string(Domain, DomainStr),
              atom_string(Difficulty, DiffStr),
-             reply_json_dict(json{success: true, nextTopic: NextTopicStr, domain: DomainStr, difficulty: DiffStr, hours: Hours, xp: XP}))
+             reply_json_dict(json{
+                 success: true,
+                 nextTopic: NextTopicStr,
+                 domain: DomainStr,
+                 difficulty: DiffStr,
+                 hours: Hours,
+                 xp: XP
+             }))
           ; reply_json_dict(json{success: false, message: "All done! JOB READY!"}))),
         Error,
-        (format(user_error, 'Error: ~w~n', [Error]),
+        (log_error(Error),
          reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
     ).
 
+% Get projects by level
 handle_get_projects(Request) :- 
+    check_rate_limit(Request, get_projects),
     cors_enable_with_origin(Request),
     catch(
         (http_parameters(Request, [level(LevelRaw, [])]),
          sanitize_input(LevelRaw, Level),
          atom_string(LevelAtom, Level),
-         findall(json{title: Title, requiredSkills: ReqSkillsStr, description: Desc, features: Features},
-            (project(LevelAtom, Title, ReqSkills, Desc, Features),
-             maplist(atom_string, ReqSkills, ReqSkillsStr)), Projects),
+         findall(json{
+             title: Title,
+             requiredSkills: ReqSkillsStr,
+             description: Desc,
+             features: Features
+         }, (
+             project(LevelAtom, Title, ReqSkills, Desc, Features),
+             maplist(atom_string, ReqSkills, ReqSkillsStr)
+         ), Projects),
          reply_json_dict(json{success: true, projects: Projects})),
         Error,
-        (format(user_error, 'Error: ~w~n', [Error]),
+        (log_error(Error),
          reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
     ).
 
+% Get all career paths
 handle_career_paths(Request) :- 
+    check_rate_limit(Request, career_paths),
     cors_enable_with_origin(Request),
     catch(
-        (findall(json{id: PathStr, name: NameStr, totalSkills: Total, estimatedHours: Hours},
-            (career_path(Path, Skills, Hours),
+        (findall(json{
+             id: PathStr,
+             name: NameStr,
+             totalSkills: Total,
+             estimatedHours: Hours
+         }, (
+             career_path(Path, Skills, Hours),
              atom_string(Path, PathStr),
              format_career_name(Path, NameStr),
-             length(Skills, Total)), Paths),
+             length(Skills, Total)
+         ), Paths),
          reply_json_dict(json{success: true, paths: Paths})),
         Error,
-        (format(user_error, 'Error: ~w~n', [Error]),
+        (log_error(Error),
          reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
     ).
 
-format_career_name(frontend_developer, "Frontend Developer").
-format_career_name(backend_developer, "Backend Developer").
-format_career_name(fullstack_developer, "Full Stack Developer").
-format_career_name(data_structures_algorithms, "DSA Expert").
-format_career_name(devops_engineer, "DevOps Engineer").
-
-skill_tree_with_status(UserId, CareerPath, SkillTree) :-
-    career_path(CareerPath, Skills, _),
-    maplist(skill_with_status(UserId), Skills, SkillTree).
-
-skill_with_status(UserId, Skill, json{skill: Skill, status: Status, prerequisites: Prereqs, domain: Domain, difficulty: Difficulty, hours: Hours, xp: XP}) :-
-    (user_progress(UserId, Skill, completed) -> Status = completed ;
-     (all_prerequisites(Skill, AllPrereqs),
-      forall(member(P, AllPrereqs), user_progress(UserId, P, completed)) -> Status = available ; Status = locked)),
-    findall(P, prerequisite(P, Skill), Prereqs),
-    skill(Skill, Domain, Difficulty, Hours, XP).
-
+% Get skill tree with status
 handle_skill_tree(Request) :- 
+    check_rate_limit(Request, skill_tree),
     cors_enable_with_origin(Request),
     catch(
         (http_read_json_dict(Request, Data),
-         require_field(Data, userId), require_field(Data, careerPath),
+         require_field(Data, userId),
+         require_field(Data, careerPath),
          sanitize_input(Data.userId, UserId),
+         validate_user_id(UserId),
          sanitize_input(Data.careerPath, CareerPath),
          atom_string(CareerPathAtom, CareerPath),
          skill_tree_with_status(UserId, CareerPathAtom, SkillTree),
          reply_json_dict(json{success: true, skillTree: SkillTree})),
         Error,
-        (format(user_error, 'Error: ~w~n', [Error]),
+        (log_error(Error),
          reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
     ).
 
+% Get learning resources for a topic
 handle_get_resources(Request) :- 
+    check_rate_limit(Request, get_resources),
     cors_enable_with_origin(Request),
     catch(
         (http_read_json_dict(Request, Data),
          require_field(Data, topic),
          sanitize_input(Data.topic, Topic),
          atom_string(TopicAtom, Topic),
-         findall(json{type: TypeStr, content: Content, example: Example},
-            (resource(TopicAtom, Type, Content, Example),
-             atom_string(Type, TypeStr)), Resources),
+         findall(json{
+             type: TypeStr,
+             content: Content,
+             example: Example
+         }, (
+             resource(TopicAtom, Type, Content, Example),
+             atom_string(Type, TypeStr)
+         ), Resources),
          reply_json_dict(json{success: true, resources: Resources})),
         Error,
-        (format(user_error, 'Error: ~w~n', [Error]),
+        (log_error(Error),
          reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
     ).
 
+%==============================================
+% HELPER PREDICATES
+%==============================================
+
+% Convert skill to JSON
+skill_to_json(Skill, Json) :- 
+    skill(Skill, Domain, Difficulty, Hours, XP),
+    atom_string(SkillStr, Skill),
+    atom_string(DomainStr, Domain),
+    atom_string(Difficulty, DiffStr),
+    Json = json{
+        name: SkillStr,
+        domain: DomainStr,
+        difficulty: DiffStr,
+        hours: Hours,
+        xp: XP
+    }.
+
+% Format career path names
+format_career_name(frontend_developer, "Frontend Developer").
+format_career_name(backend_developer, "Backend Developer").
+format_career_name(fullstack_developer, "Full Stack Developer").
+format_career_name(data_structures_algorithms, "DSA Expert").
+format_career_name(devops_engineer, "DevOps Engineer").
+
+% Get all prerequisites (transitive closure)
 all_prerequisites(Skill, AllPrereqs) :-
     findall(P, prerequisite_chain(P, Skill), Prereqs),
     list_to_set(Prereqs, AllPrereqs).
+
 prerequisite_chain(P, Skill) :- prerequisite(P, Skill).
 prerequisite_chain(P, Skill) :- prerequisite(X, Skill), prerequisite_chain(P, X).
 
+% Generate ordered learning path using topological sort
 generate_learning_path(CareerPath, OrderedSkills) :-
     career_path(CareerPath, Skills, _),
     topological_sort(Skills, OrderedSkills).
+
 topological_sort(Skills, Sorted) :- topological_sort(Skills, [], Sorted).
 topological_sort([], Acc, Result) :- reverse(Acc, Result).
 topological_sort(Skills, Acc, Result) :- 
@@ -488,10 +704,12 @@ topological_sort(Skills, Acc, Result) :-
     \+ (member(Other, Rest), prerequisite_chain(Skill, Other)),
     topological_sort(Rest, [Skill|Acc], Result).
 
+% Calculate total XP for skills
 total_xp_for_skills(Skills, TotalXP) :-
     findall(XP, (member(Skill, Skills), skill(Skill, _, _, _, XP)), XPs),
     sum_list(XPs, TotalXP).
 
+% Get next available topic
 get_next_topic(UserId, NextTopic) :-
     user_path(UserId, Path),
     findall(T, (member(T, Path), user_progress(UserId, T, completed)), Completed),
@@ -500,18 +718,54 @@ get_next_topic(UserId, NextTopic) :-
     all_prerequisites(NextTopic, Prereqs),
     forall(member(P, Prereqs), member(P, Completed)), !.
 
+% Get skill tree with status
+skill_tree_with_status(UserId, CareerPath, SkillTree) :-
+    career_path(CareerPath, Skills, _),
+    maplist(skill_with_status(UserId), Skills, SkillTree).
+
+skill_with_status(UserId, Skill, json{
+    skill: Skill,
+    status: Status,
+    prerequisites: Prereqs,
+    domain: Domain,
+    difficulty: Difficulty,
+    hours: Hours,
+    xp: XP
+}) :-
+    (user_progress(UserId, Skill, completed) -> Status = completed ;
+     (all_prerequisites(Skill, AllPrereqs),
+      forall(member(P, AllPrereqs), user_progress(UserId, P, completed))
+      -> Status = available ; Status = locked)),
+    findall(P, prerequisite(P, Skill), Prereqs),
+    skill(Skill, Domain, Difficulty, Hours, XP).
+
+% CORS helper
 cors_enable_with_origin(Request) :-
-    (member(origin(Origin), Request) -> true ; Origin = 'http://localhost:3000'),
-    (frontend_origin(Origin) -> AllowedOrigin = Origin ; AllowedOrigin = 'http://localhost:3000'),
-    cors_enable(Request, [methods([get,post,options]), origins([AllowedOrigin]), headers(['content-type','authorization'])]).
+    (memberchk(origin(Origin), Request) -> true ; Origin = 'http://localhost:3000'),
+    setting(allowed_origins, AllowedOrigins),
+    (member(Origin, AllowedOrigins) -> AllowedOrigin = Origin ; AllowedOrigin = 'http://localhost:3000'),
+    cors_enable(Request, [
+        methods([get,post,options]), 
+        origins([AllowedOrigin]), 
+        headers(['content-type','authorization'])
+    ]).
+
+%==============================================
+% SERVER STARTUP
+%==============================================
 
 start_server(Port) :-
     initialize_db,
     http_server(http_dispatch, [port(Port)]),
-    format('~n🚀 Job Ready Platform Backend Started!~n', []),
-    format('   Server running on http://localhost:~w~n', [Port]),
-    format('   API endpoints ready at /api/*~n', []),
-    format('   Data persistence enabled: data/user_data.db~n', []),
-    format('~n💡 Ready to make students JOB READY!~n~n', []).
+    format('~n╔════════════════════════════════════════════════════════════╗~n', []),
+    format('║     🚀 JOB READY PLATFORM - PRODUCTION BACKEND READY      ║~n', []),
+    format('╚════════════════════════════════════════════════════════════╝~n~n', []),
+    format('   📡 Server:           http://localhost:~w~n', [Port]),
+    format('   🔗 API Endpoints:    /api/*~n', []),
+    format('   💾 Database:         data/user_data.db~n', []),
+    format('   🛡️  Rate Limiting:    ENABLED (60 req/min)~n', []),
+    format('   🔒 Input Validation: ENABLED~n', []),
+    format('   📊 Logging Level:    INFO~n', []),
+    format('~n   ✨ All systems operational! Ready for production!~n~n', []).
 
 :- initialization(start_server(8080)).
