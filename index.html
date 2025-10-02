@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Job Ready Platform - Learn Code, Get Hired</title>
 
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+
     <!-- React and ReactDOM from CDN -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -28,8 +32,16 @@
 
         body {
             margin: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            transition: background 0.3s ease;
+        }
+
+        body.light-theme {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        body.dark-theme {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
         }
 
         .glass {
@@ -84,14 +96,6 @@
                 transform: translateY(100vh) rotate(360deg);
                 opacity: 0;
             }
-        }
-
-        .progress-ring {
-            transform: rotate(-90deg);
-        }
-
-        .progress-ring-circle {
-            transition: stroke-dashoffset 0.5s ease;
         }
 
         .modal {
@@ -156,56 +160,158 @@
             }
         }
 
-        .skill-tree-node {
-            position: relative;
+        .settings-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 900;
+            transition: all 0.3s ease;
         }
 
-        .skill-tree-node::before {
-            content: '';
-            position: absolute;
-            width: 2px;
-            height: 30px;
-            background: rgba(255,255,255,0.3);
-            top: -30px;
-            left: 50%;
+        .settings-btn:hover {
+            transform: rotate(90deg);
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .auth-form {
+            max-width: 400px;
+            width: 100%;
+        }
+
+        .auth-input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 16px;
+        }
+
+        .auth-input::placeholder {
+            color: rgba(255,255,255,0.5);
+        }
+
+        .auth-input:focus {
+            outline: none;
+            border-color: rgba(255,255,255,0.6);
         }
     </style>
 </head>
-<body>
+<body class="light-theme">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // API Configuration
-        const API_BASE = 'http://localhost:8080/api';
+        // Initialize Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDEAOr3iqU6TJZ6uztMvC5mquZECPcBkkE",
+            authDomain: "fir-config-d3c36.firebaseapp.com",
+            projectId: "fir-config-d3c36",
+            storageBucket: "fir-config-d3c36.firebasestorage.app",
+            messagingSenderId: "477435579926",
+            appId: "1:477435579926:web:d370e9fb5a3c5a05316f37"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        // API Configuration - Environment aware
+        const API_BASE = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8080/api' 
+            : '/api';
 
         // Main App Component
         function App() {
-            const [screen, setScreen] = useState('welcome'); // welcome, dashboard, learning
-            const [userId, setUserId] = useState('');
+            const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [screen, setScreen] = useState('welcome');
             const [careerPaths, setCareerPaths] = useState([]);
             const [selectedPath, setSelectedPath] = useState(null);
             const [learningPath, setLearningPath] = useState([]);
             const [progress, setProgress] = useState(null);
             const [currentTopic, setCurrentTopic] = useState(null);
             const [showModal, setShowModal] = useState(false);
+            const [modalType, setModalType] = useState(''); // 'auth', 'settings', 'projects'
             const [resources, setResources] = useState([]);
             const [projects, setProjects] = useState([]);
             const [notification, setNotification] = useState(null);
             const [xp, setXp] = useState(0);
             const [streak, setStreak] = useState(0);
             const [level, setLevel] = useState(1);
+            const [theme, setTheme] = useState('light');
+            const [authMode, setAuthMode] = useState('login'); // 'login' or 'signup'
 
-            // Load career paths on mount
+            // Check auth state on mount
             useEffect(() => {
-                fetchCareerPaths();
+                const unsubscribe = auth.onAuthStateChanged((firebaseUser) => {
+                    setUser(firebaseUser);
+                    setLoading(false);
+                    if (firebaseUser) {
+                        fetchCareerPaths();
+                        // Check if user has existing path
+                        fetchProgress(firebaseUser.uid);
+                    }
+                });
+                return () => unsubscribe();
             }, []);
 
             // Calculate level from XP
             useEffect(() => {
                 setLevel(Math.floor(xp / 1000) + 1);
             }, [xp]);
+
+            // Theme toggle
+            const toggleTheme = () => {
+                const newTheme = theme === 'light' ? 'dark' : 'light';
+                setTheme(newTheme);
+                document.body.className = `${newTheme}-theme`;
+            };
+
+            // Auth functions
+            const handleSignup = async (email, password) => {
+                try {
+                    await auth.createUserWithEmailAndPassword(email, password);
+                    showNotification('✅ Account created successfully!', 'success');
+                    setShowModal(false);
+                } catch (error) {
+                    showNotification(`❌ ${error.message}`, 'error');
+                }
+            };
+
+            const handleLogin = async (email, password) => {
+                try {
+                    await auth.signInWithEmailAndPassword(email, password);
+                    showNotification('✅ Logged in successfully!', 'success');
+                    setShowModal(false);
+                } catch (error) {
+                    showNotification(`❌ ${error.message}`, 'error');
+                }
+            };
+
+            const handleLogout = async () => {
+                try {
+                    await auth.signOut();
+                    setScreen('welcome');
+                    setSelectedPath(null);
+                    setLearningPath([]);
+                    setProgress(null);
+                    showNotification('👋 Logged out successfully!', 'success');
+                    setShowModal(false);
+                } catch (error) {
+                    showNotification(`❌ ${error.message}`, 'error');
+                }
+            };
 
             // Fetch career paths
             const fetchCareerPaths = async () => {
@@ -217,19 +323,24 @@
                     }
                 } catch (error) {
                     console.error('Error fetching career paths:', error);
+                    showNotification('❌ Backend not reachable. Please start the backend server.', 'error');
                 }
             };
 
             // Generate learning path
             const generatePath = async (pathId) => {
-                const newUserId = 'user_' + Date.now();
-                setUserId(newUserId);
+                if (!user) {
+                    setModalType('auth');
+                    setShowModal(true);
+                    showNotification('🔐 Please login to continue', 'error');
+                    return;
+                }
 
                 try {
                     const response = await fetch(`${API_BASE}/generate-path`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId: newUserId, careerPath: pathId })
+                        body: JSON.stringify({ userId: user.uid, careerPath: pathId })
                     });
                     const data = await response.json();
 
@@ -238,16 +349,17 @@
                         setSelectedPath(pathId);
                         setScreen('dashboard');
                         showNotification('🚀 Your personalized learning path is ready!', 'success');
-                        fetchProgress(newUserId);
+                        fetchProgress(user.uid);
                     }
                 } catch (error) {
                     console.error('Error generating path:', error);
-                    showNotification('❌ Error generating path. Make sure backend is running!', 'error');
+                    showNotification('❌ Error generating path. Check backend connection!', 'error');
                 }
             };
 
             // Fetch progress
-            const fetchProgress = async (uid = userId) => {
+            const fetchProgress = async (uid = user?.uid) => {
+                if (!uid) return;
                 try {
                     const response = await fetch(`${API_BASE}/progress?userId=${uid}`);
                     const data = await response.json();
@@ -256,6 +368,10 @@
                         setProgress(data);
                         setXp(data.xp || 0);
                         setStreak(data.streak || 0);
+                        // If user has a path, switch to dashboard
+                        if (data.totalSkills > 0 && screen === 'welcome') {
+                            setScreen('dashboard');
+                        }
                     }
                 } catch (error) {
                     console.error('Error fetching progress:', error);
@@ -264,6 +380,12 @@
 
             // Start learning a topic
             const startLearning = async (topic) => {
+                if (!user) {
+                    setModalType('auth');
+                    setShowModal(true);
+                    return;
+                }
+
                 try {
                     const response = await fetch(`${API_BASE}/resources`, {
                         method: 'POST',
@@ -279,16 +401,19 @@
                     }
                 } catch (error) {
                     console.error('Error fetching resources:', error);
+                    showNotification('❌ Error loading resources', 'error');
                 }
             };
 
             // Mark topic as complete
             const completeTopic = async () => {
+                if (!user) return;
+
                 try {
                     const response = await fetch(`${API_BASE}/update-progress`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId, topic: currentTopic.name })
+                        body: JSON.stringify({ userId: user.uid, topic: currentTopic.name })
                     });
                     const data = await response.json();
 
@@ -302,6 +427,7 @@
                     }
                 } catch (error) {
                     console.error('Error updating progress:', error);
+                    showNotification('❌ Error updating progress', 'error');
                 }
             };
 
@@ -333,24 +459,45 @@
                     const data = await response.json();
                     if (data.success) {
                         setProjects(data.projects);
+                        setModalType('projects');
                         setShowModal(true);
                     }
                 } catch (error) {
                     console.error('Error fetching projects:', error);
+                    showNotification('❌ Error loading projects', 'error');
                 }
             };
 
-            // Render based on screen
+            if (loading) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center">
+                        <div className="glass rounded-full p-8">
+                            <i className="fas fa-spinner fa-spin text-white text-4xl"></i>
+                        </div>
+                    </div>
+                );
+            }
+
             return (
                 <div className="min-h-screen">
+                    {/* Settings Button */}
+                    <button 
+                        className="settings-btn"
+                        onClick={() => { setModalType('settings'); setShowModal(true); }}
+                    >
+                        <i className="fas fa-cog"></i>
+                    </button>
+
+                    {/* Notification */}
                     {notification && (
                         <div className={`notification ${notification.type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white`}>
                             {notification.message}
                         </div>
                     )}
 
+                    {/* Screens */}
                     {screen === 'welcome' && (
-                        <WelcomeScreen careerPaths={careerPaths} onSelectPath={generatePath} />
+                        <WelcomeScreen careerPaths={careerPaths} onSelectPath={generatePath} user={user} />
                     )}
 
                     {screen === 'dashboard' && (
@@ -361,6 +508,7 @@
                             streak={streak}
                             level={level}
                             selectedPath={selectedPath}
+                            user={user}
                             onStartLearning={startLearning}
                             onViewProjects={fetchProjects}
                         />
@@ -375,7 +523,30 @@
                         />
                     )}
 
-                    {showModal && (
+                    {/* Modals */}
+                    {showModal && modalType === 'auth' && (
+                        <AuthModal 
+                            mode={authMode}
+                            onClose={() => setShowModal(false)}
+                            onLogin={handleLogin}
+                            onSignup={handleSignup}
+                            setMode={setAuthMode}
+                        />
+                    )}
+
+                    {showModal && modalType === 'settings' && (
+                        <SettingsModal 
+                            user={user}
+                            theme={theme}
+                            onClose={() => setShowModal(false)}
+                            onLogout={handleLogout}
+                            onLogin={() => { setModalType('auth'); setAuthMode('login'); }}
+                            onSignup={() => { setModalType('auth'); setAuthMode('signup'); }}
+                            onToggleTheme={toggleTheme}
+                        />
+                    )}
+
+                    {showModal && modalType === 'projects' && (
                         <ProjectModal 
                             projects={projects}
                             onClose={() => setShowModal(false)}
@@ -385,8 +556,156 @@
             );
         }
 
+        // Auth Modal Component
+        function AuthModal({ mode, onClose, onLogin, onSignup, setMode }) {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (mode === 'login') {
+                    onLogin(email, password);
+                } else {
+                    onSignup(email, password);
+                }
+            };
+
+            return (
+                <div className="modal active" onClick={onClose}>
+                    <div 
+                        className="glass rounded-2xl p-8 auth-form"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="text-white">
+                            <h2 className="text-3xl font-bold mb-6 text-center">
+                                <i className="fas fa-user-circle mr-2"></i>
+                                {mode === 'login' ? 'Login' : 'Sign Up'}
+                            </h2>
+
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <div>
+                                    <label className="block mb-2">Email</label>
+                                    <input 
+                                        type="email"
+                                        className="auth-input"
+                                        placeholder="your@email.com"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block mb-2">Password</label>
+                                    <input 
+                                        type="password"
+                                        className="auth-input"
+                                        placeholder="••••••••"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        required
+                                        minLength="6"
+                                    />
+                                </div>
+
+                                <button 
+                                    type="submit"
+                                    className="w-full bg-gradient-to-r from-blue-500 to-purple-600 py-3 rounded-lg font-semibold hover:opacity-90"
+                                >
+                                    {mode === 'login' ? 'Login' : 'Create Account'}
+                                </button>
+                            </form>
+
+                            <div className="text-center mt-4">
+                                <button 
+                                    onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+                                    className="text-sm opacity-75 hover:opacity-100"
+                                >
+                                    {mode === 'login' 
+                                        ? "Don't have an account? Sign up" 
+                                        : "Already have an account? Login"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Settings Modal Component
+        function SettingsModal({ user, theme, onClose, onLogout, onLogin, onSignup, onToggleTheme }) {
+            return (
+                <div className="modal active" onClick={onClose}>
+                    <div 
+                        className="glass rounded-2xl p-8 max-w-md w-full text-white"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-3xl font-bold">
+                                <i className="fas fa-cog mr-2"></i>Settings
+                            </h2>
+                            <button onClick={onClose} className="text-3xl hover:text-red-400">
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            {/* User Info */}
+                            {user ? (
+                                <div className="bg-white bg-opacity-10 rounded-lg p-4">
+                                    <p className="text-sm opacity-75 mb-1">Logged in as:</p>
+                                    <p className="font-bold">{user.email}</p>
+                                </div>
+                            ) : (
+                                <div className="bg-white bg-opacity-10 rounded-lg p-4">
+                                    <p className="text-center opacity-75">Not logged in</p>
+                                </div>
+                            )}
+
+                            {/* Theme Toggle */}
+                            <button
+                                onClick={onToggleTheme}
+                                className="w-full bg-white bg-opacity-20 py-3 rounded-lg font-semibold hover:bg-opacity-30 flex items-center justify-between px-4"
+                            >
+                                <span>
+                                    <i className={`fas ${theme === 'light' ? 'fa-sun' : 'fa-moon'} mr-2`}></i>
+                                    Theme
+                                </span>
+                                <span className="capitalize">{theme}</span>
+                            </button>
+
+                            {/* Auth Buttons */}
+                            {user ? (
+                                <button
+                                    onClick={onLogout}
+                                    className="w-full bg-red-500 py-3 rounded-lg font-semibold hover:bg-red-600"
+                                >
+                                    <i className="fas fa-sign-out-alt mr-2"></i>Logout
+                                </button>
+                            ) : (
+                                <>
+                                    <button
+                                        onClick={onLogin}
+                                        className="w-full bg-blue-500 py-3 rounded-lg font-semibold hover:bg-blue-600"
+                                    >
+                                        <i className="fas fa-sign-in-alt mr-2"></i>Login
+                                    </button>
+                                    <button
+                                        onClick={onSignup}
+                                        className="w-full bg-green-500 py-3 rounded-lg font-semibold hover:bg-green-600"
+                                    >
+                                        <i className="fas fa-user-plus mr-2"></i>Sign Up
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         // Welcome Screen Component
-        function WelcomeScreen({ careerPaths, onSelectPath }) {
+        function WelcomeScreen({ careerPaths, onSelectPath, user }) {
             return (
                 <div className="min-h-screen flex items-center justify-center p-8">
                     <div className="glass rounded-3xl p-12 max-w-6xl w-full text-white">
@@ -401,6 +720,11 @@
                             <p className="text-lg mt-4 opacity-75">
                                 Powered by AI Knowledge Graphs • Personalized Learning Paths • Real Projects
                             </p>
+                            {user && (
+                                <p className="text-lg mt-2 bg-white bg-opacity-20 inline-block px-4 py-2 rounded-full">
+                                    👋 Welcome, {user.email}
+                                </p>
+                            )}
                         </div>
 
                         <h2 className="text-3xl font-bold mb-6 text-center">Choose Your Career Path</h2>
@@ -450,10 +774,9 @@
         }
 
         // Dashboard Component
-        function Dashboard({ learningPath, progress, xp, streak, level, selectedPath, onStartLearning, onViewProjects }) {
+        function Dashboard({ learningPath, progress, xp, streak, level, selectedPath, user, onStartLearning, onViewProjects }) {
             return (
-                <div className="min-h-screen p-8">
-                    {/* Header */}
+                <div className="min-h-screen p-8 pt-20">
                     <div className="glass rounded-2xl p-6 mb-8 text-white">
                         <div className="flex justify-between items-center flex-wrap gap-4">
                             <div>
@@ -462,6 +785,7 @@
                                     Your Learning Dashboard
                                 </h1>
                                 <p className="opacity-75 mt-1">{selectedPath?.replace(/_/g, ' ').toUpperCase()}</p>
+                                {user && <p className="text-sm opacity-75 mt-1">👤 {user.email}</p>}
                             </div>
 
                             <div className="flex gap-6">
@@ -488,7 +812,6 @@
                             </div>
                         </div>
 
-                        {/* Progress Bar */}
                         {progress && (
                             <div className="mt-6">
                                 <div className="flex justify-between mb-2">
@@ -506,7 +829,6 @@
                         )}
                     </div>
 
-                    {/* Skills Grid */}
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {learningPath.map((skill, index) => {
                             const isCompleted = progress?.completedSkills?.includes(skill.name);
@@ -552,7 +874,6 @@
                         })}
                     </div>
 
-                    {/* Projects Section */}
                     <div className="mt-8 glass rounded-2xl p-6 text-white">
                         <h2 className="text-2xl font-bold mb-4">
                             <i className="fas fa-code mr-2"></i>Practice Projects
@@ -588,7 +909,7 @@
             const [currentResourceIndex, setCurrentResourceIndex] = useState(0);
 
             return (
-                <div className="min-h-screen p-8">
+                <div className="min-h-screen p-8 pt-20">
                     <div className="max-w-4xl mx-auto">
                         <button 
                             onClick={onBack}
@@ -615,7 +936,6 @@
 
                             {resources.length > 0 && (
                                 <div>
-                                    {/* Resource Navigation */}
                                     <div className="flex gap-2 mb-6">
                                         {resources.map((res, index) => (
                                             <button
@@ -632,7 +952,6 @@
                                         ))}
                                     </div>
 
-                                    {/* Current Resource */}
                                     <div className="bg-white bg-opacity-10 rounded-xl p-6 mb-6">
                                         <div className="flex items-center gap-3 mb-4">
                                             <i className={`fas ${resources[currentResourceIndex].type === 'tutorial' ? 'fa-book' : 'fa-dumbbell'} text-3xl`}></i>
@@ -650,7 +969,6 @@
                                         </div>
                                     </div>
 
-                                    {/* Navigation */}
                                     <div className="flex justify-between">
                                         <button
                                             onClick={() => setCurrentResourceIndex(Math.max(0, currentResourceIndex - 1))}
@@ -680,7 +998,6 @@
                             )}
                         </div>
 
-                        {/* Tips Section */}
                         <div className="glass rounded-xl p-6 mt-6 text-white">
                             <h3 className="text-xl font-bold mb-3">
                                 <i className="fas fa-lightbulb mr-2 text-yellow-300"></i>Pro Tips
