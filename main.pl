@@ -19,7 +19,8 @@ Version: 2.0.0
 :- dynamic config_setting/2.
 
 % Initialize config settings
-:- assertz(config_setting(allowed_origins, ['http://localhost:3000', 'http://localhost', '*'])).
+% Note: In development, '*' allows all origins. For production, replace with your actual domain.
+:- assertz(config_setting(allowed_origins, ['http://localhost:3000', 'http://localhost', 'http://localhost:8080'])).
 :- assertz(config_setting(enable_rate_limit, true)).
 :- assertz(config_setting(max_requests_per_minute, 60)).
 :- assertz(config_setting(log_level, info)).
@@ -44,7 +45,7 @@ get_config(_, _) :- fail.
 :- http_handler('/api/skill-tree', handle_skill_tree, [method(post)]).
 :- http_handler('/api/resources', handle_get_resources, [method(post)]).
 :- http_handler('/api/health', handle_health, [method(get)]).
-:- http_handler('/api/', handle_options, [method(options), prefix]).
+:- http_handler(root(api/), handle_options, [method(options), prefix]).
 
 % HTTP Route Handlers - New Interactive Learning Features
 :- http_handler('/api/get-video', handle_get_video, [method(post)]).
@@ -1303,16 +1304,20 @@ skill_with_status(UserId, Skill, json{
     skill(Skill, Domain, Difficulty, Hours, XP).
 
 % CORS helper - adds CORS headers to response
+% This is a simplified CORS implementation compatible with SWI-Prolog's HTTP server
 cors_enable_with_origin(Request) :-
-    (memberchk(origin(Origin), Request) -> true ; Origin = '*'),
+    (memberchk(origin(Origin), Request) -> true ; Origin = 'http://localhost:3000'),
     get_config(allowed_origins, AllowedOrigins),
     (member(Origin, AllowedOrigins) -> AllowedOrigin = Origin 
-    ; member('*', AllowedOrigins) -> AllowedOrigin = '*'
     ; AllowedOrigin = 'http://localhost:3000'),
+    % Set CORS headers using format to current output
     format('Access-Control-Allow-Origin: ~w~n', [AllowedOrigin]),
     format('Access-Control-Allow-Methods: GET, POST, OPTIONS~n', []),
     format('Access-Control-Allow-Headers: Content-Type, Authorization~n', []),
     format('Access-Control-Max-Age: 86400~n', []).
+
+% Alternative CORS handler that just succeeds (headers handled by nginx in production)
+cors_enable_simple(_Request) :- true.
 
 %==============================================
 % SERVER STARTUP

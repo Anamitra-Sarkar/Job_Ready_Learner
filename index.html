@@ -1355,44 +1355,48 @@
                     // Capture console.log output
                     const logs = [];
                     const originalLog = console.log;
-                    console.log = (...args) => logs.push(args.map(a => String(a)).join(' '));
+                    const originalError = console.error;
+                    console.log = (...args) => logs.push({ type: 'info', text: args.map(a => String(a)).join(' ') });
+                    console.error = (...args) => logs.push({ type: 'error', text: args.map(a => String(a)).join(' ') });
 
-                    // Create sandboxed execution
-                    const sandbox = new Function('code', `
-                        try {
-                            ${code}
-                            return { success: true };
-                        } catch (error) {
-                            return { success: false, error: error.message };
-                        }
-                    `);
-
-                    const result = sandbox(code);
-                    console.log = originalLog;
-
-                    if (!result.success) {
-                        setConsoleOutput([{ type: 'error', text: `Error: ${result.error}` }]);
-                        setIsRunning(false);
-                        return;
-                    }
-
-                    // Add logs to output
-                    logs.forEach(log => {
-                        setConsoleOutput(prev => [...prev, { type: 'info', text: log }]);
-                    });
-
-                    // Run tests by evaluating the code and testing
-                    const testsPassed = [];
+                    // Safe code execution with try-catch wrapper
+                    // Note: This executes in browser context. User code is inherently trusted as they run it on their own browser.
+                    // For production, consider using a sandboxed iframe or Web Worker for isolation.
                     try {
-                        // Evaluate the full code to define functions
-                        eval(code);
-                        
-                        // Run simple test validation
-                        setConsoleOutput(prev => [...prev, { type: 'info', text: '✓ Code executed successfully!' }]);
+                        // Create a function wrapper that executes the code
+                        const executeCode = new Function(`
+                            "use strict";
+                            try {
+                                ${code}
+                                return { success: true };
+                            } catch (e) {
+                                return { success: false, error: e.message };
+                            }
+                        `);
+
+                        const result = executeCode();
+                        console.log = originalLog;
+                        console.error = originalError;
+
+                        if (!result.success) {
+                            setConsoleOutput([{ type: 'error', text: `Error: ${result.error}` }]);
+                            setIsRunning(false);
+                            return;
+                        }
+
+                        // Add captured logs to output
+                        if (logs.length > 0) {
+                            setConsoleOutput(logs);
+                        } else {
+                            setConsoleOutput([{ type: 'success', text: '✓ Code executed successfully!' }]);
+                        }
+
+                        // Simple validation - code ran without throwing
                         setTestResults([{ description: 'Code runs without errors', passed: true }]);
-                        testsPassed.push(true);
                     } catch (error) {
-                        setConsoleOutput(prev => [...prev, { type: 'error', text: `Test error: ${error.message}` }]);
+                        console.log = originalLog;
+                        console.error = originalError;
+                        setConsoleOutput([{ type: 'error', text: `Runtime Error: ${error.message}` }]);
                         setTestResults([{ description: 'Code execution', passed: false, error: error.message }]);
                     }
 
