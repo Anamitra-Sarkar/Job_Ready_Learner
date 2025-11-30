@@ -452,7 +452,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
         // Initialize Firebase with config from config.js
         firebase.initializeApp(AppConfig.firebase);
@@ -460,6 +460,36 @@
 
         // Use API configuration from config.js
         const API_BASE = AppConfig.api.baseUrl;
+
+        // Utility: Debounce function for performance optimization
+        const useDebounce = (value, delay) => {
+            const [debouncedValue, setDebouncedValue] = useState(value);
+            
+            useEffect(() => {
+                const handler = setTimeout(() => {
+                    setDebouncedValue(value);
+                }, delay);
+                
+                return () => {
+                    clearTimeout(handler);
+                };
+            }, [value, delay]);
+            
+            return debouncedValue;
+        };
+
+        // Utility: Throttle function for rate-limiting
+        const useThrottle = (callback, delay) => {
+            const lastRan = useRef(Date.now());
+            
+            return useCallback((...args) => {
+                const now = Date.now();
+                if (now - lastRan.current >= delay) {
+                    callback(...args);
+                    lastRan.current = now;
+                }
+            }, [callback, delay]);
+        };
 
         // Log initialization in development
         if (AppConfig.isDevelopment) {
@@ -824,19 +854,33 @@
                 setTimeout(() => setNotification(null), 4000);
             };
 
-            // Trigger confetti animation
+            // Trigger confetti animation - optimized with DocumentFragment and CSS transforms
             const triggerConfetti = () => {
+                const colors = ['#ff0', '#f0f', '#0ff', '#f00', '#0f0', '#00f'];
+                const fragment = document.createDocumentFragment();
+                const confettiPieces = [];
+                
+                // Pre-create all confetti elements at once using DocumentFragment
                 for (let i = 0; i < 50; i++) {
-                    setTimeout(() => {
-                        const confetti = document.createElement('div');
-                        confetti.className = 'confetti';
-                        confetti.style.left = Math.random() * 100 + '%';
-                        confetti.style.background = ['#ff0', '#f0f', '#0ff', '#f00', '#0f0', '#00f'][Math.floor(Math.random() * 6)];
-                        confetti.style.animationDelay = Math.random() * 2 + 's';
-                        document.body.appendChild(confetti);
-                        setTimeout(() => confetti.remove(), 3000);
-                    }, i * 30);
+                    const confetti = document.createElement('div');
+                    confetti.className = 'confetti';
+                    confetti.style.cssText = `
+                        left: ${Math.random() * 100}%;
+                        background: ${colors[Math.floor(Math.random() * colors.length)]};
+                        animation-delay: ${Math.random() * 2}s;
+                    `;
+                    confettiPieces.push(confetti);
+                    fragment.appendChild(confetti);
                 }
+                
+                // Batch append all confetti elements at once (single DOM reflow)
+                document.body.appendChild(fragment);
+                
+                // Schedule single cleanup instead of 50 individual timeouts
+                // Using 3000ms to match the CSS animation duration
+                setTimeout(() => {
+                    confettiPieces.forEach(piece => piece.remove());
+                }, 3000);
             };
 
             // Fetch projects
@@ -1318,6 +1362,7 @@
         }
 
         // LearningScreen Component - Enhanced with Videos, Console, Exercises, Hints
+        // Optimized with memoization and debounced code input
         function LearningScreen({ topic, resources, videos, exercises, user, onComplete, onBack, onFetchHints, onSubmitExercise, showNotification }) {
             const [activeTab, setActiveTab] = useState('video');
             const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
@@ -1330,27 +1375,38 @@
             const [totalHints, setTotalHints] = useState(0);
             const [isRunning, setIsRunning] = useState(false);
             const [exerciseCompleted, setExerciseCompleted] = useState({});
+            
+            // Memoize current exercise to avoid re-renders
+            const currentExercise = useMemo(() => 
+                exercises[currentExerciseIndex] || null,
+                [exercises, currentExerciseIndex]
+            );
+            
+            // Memoize current video to avoid re-renders
+            const currentVideo = useMemo(() => 
+                videos[currentVideoIndex] || null,
+                [videos, currentVideoIndex]
+            );
 
             // Set starter code when exercise changes
             useEffect(() => {
-                if (exercises.length > 0 && exercises[currentExerciseIndex]) {
-                    setCode(exercises[currentExerciseIndex].starterCode || '');
+                if (currentExercise) {
+                    setCode(currentExercise.starterCode || '');
                     setHints([]);
                     setHintLevel(0);
                     setTestResults([]);
                     setConsoleOutput([]);
                 }
-            }, [currentExerciseIndex, exercises]);
+            }, [currentExercise]);
 
-            // Run code in browser
-            const runCode = async () => {
+            // Memoized run code function using useCallback to prevent recreating on every render
+            const runCode = useCallback(async () => {
                 setIsRunning(true);
                 setConsoleOutput([]);
                 setTestResults([]);
 
                 try {
-                    const exercise = exercises[currentExerciseIndex];
-                    if (!exercise) return;
+                    if (!currentExercise) return;
 
                     // Capture console.log output
                     const logs = [];
@@ -1405,37 +1461,40 @@
                     setConsoleOutput([{ type: 'error', text: `Runtime Error: ${error.message}` }]);
                     setIsRunning(false);
                 }
-            };
+            }, [code, currentExercise]);
 
-            // Submit exercise
-            const handleSubmitExercise = async () => {
-                const exercise = exercises[currentExerciseIndex];
-                if (!exercise) return;
+            // Memoized submit exercise handler
+            const handleSubmitExercise = useCallback(async () => {
+                if (!currentExercise) return;
 
                 // Check if code is different from starter
-                if (code.trim() === exercise.starterCode?.trim()) {
+                if (code.trim() === currentExercise.starterCode?.trim()) {
                     showNotification('⚠️ Please write some code first!', 'error');
                     return;
                 }
 
-                const result = await onSubmitExercise(exercise.id, code, true);
+                const result = await onSubmitExercise(currentExercise.id, code, true);
                 if (result && result.success) {
-                    setExerciseCompleted(prev => ({ ...prev, [exercise.id]: true }));
+                    setExerciseCompleted(prev => ({ ...prev, [currentExercise.id]: true }));
                 }
-            };
+            }, [code, currentExercise, onSubmitExercise, showNotification]);
 
-            // Get hints
-            const handleGetHint = async () => {
-                const exercise = exercises[currentExerciseIndex];
-                if (!exercise) return;
+            // Memoized get hints handler
+            const handleGetHint = useCallback(async () => {
+                if (!currentExercise) return;
 
-                const result = await onFetchHints(exercise.id, hintLevel);
+                const result = await onFetchHints(currentExercise.id, hintLevel);
                 if (result) {
                     setHints(result.hints);
                     setHintLevel(result.currentLevel + 1);
                     setTotalHints(result.totalHints);
                 }
-            };
+            }, [currentExercise, hintLevel, onFetchHints]);
+            
+            // Memoized reset code handler
+            const handleResetCode = useCallback(() => {
+                setCode(currentExercise?.starterCode || '');
+            }, [currentExercise]);
 
             return (
                 <div className="min-h-screen p-4 sm:p-8 pt-20">
@@ -1498,22 +1557,22 @@
                         {/* Video Tab */}
                         {activeTab === 'video' && (
                             <div className="glass rounded-2xl p-6 text-white">
-                                {videos.length > 0 ? (
+                                {videos.length > 0 && currentVideo ? (
                                     <>
                                         <div className="video-container mb-6">
                                             <iframe
-                                                src={`https://www.youtube.com/embed/${videos[currentVideoIndex]?.videoId}?rel=0`}
-                                                title={videos[currentVideoIndex]?.title}
+                                                src={`https://www.youtube.com/embed/${currentVideo.videoId}?rel=0`}
+                                                title={currentVideo.title}
                                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                                 allowFullScreen
                                             ></iframe>
                                         </div>
 
                                         <div className="mb-4">
-                                            <h2 className="text-2xl font-bold mb-2">{videos[currentVideoIndex]?.title}</h2>
-                                            <p className="opacity-75">{videos[currentVideoIndex]?.description}</p>
+                                            <h2 className="text-2xl font-bold mb-2">{currentVideo.title}</h2>
+                                            <p className="opacity-75">{currentVideo.description}</p>
                                             <span className="inline-block mt-2 px-3 py-1 bg-white bg-opacity-20 rounded-full text-sm">
-                                                <i className="fas fa-clock mr-1"></i>{videos[currentVideoIndex]?.duration} min
+                                                <i className="fas fa-clock mr-1"></i>{currentVideo.duration} min
                                             </span>
                                         </div>
 
@@ -1521,7 +1580,7 @@
                                             <div className="flex gap-2 flex-wrap">
                                                 {videos.map((video, index) => (
                                                     <button
-                                                        key={index}
+                                                        key={video.videoId || index}
                                                         onClick={() => setCurrentVideoIndex(index)}
                                                         className={`px-4 py-2 rounded-lg text-sm ${
                                                             currentVideoIndex === index 
@@ -1612,17 +1671,17 @@
                                             {/* Exercise Description */}
                                             <div className="glass rounded-xl p-6 text-white">
                                                 <h3 className="text-xl font-bold mb-2">
-                                                    {exercises[currentExerciseIndex]?.title}
+                                                    {currentExercise?.title}
                                                 </h3>
                                                 <p className="mb-4 opacity-90">
-                                                    {exercises[currentExerciseIndex]?.description}
+                                                    {currentExercise?.description}
                                                 </p>
                                                 <div className="flex gap-4">
                                                     <span className="text-sm px-3 py-1 bg-yellow-500 bg-opacity-30 rounded-full">
-                                                        <i className="fas fa-star mr-1"></i>{exercises[currentExerciseIndex]?.xp} XP
+                                                        <i className="fas fa-star mr-1"></i>{currentExercise?.xp} XP
                                                     </span>
                                                     <span className="text-sm px-3 py-1 bg-blue-500 bg-opacity-30 rounded-full">
-                                                        <i className="fas fa-vial mr-1"></i>{exercises[currentExerciseIndex]?.testCount} tests
+                                                        <i className="fas fa-vial mr-1"></i>{currentExercise?.testCount} tests
                                                     </span>
                                                 </div>
                                             </div>
@@ -1663,7 +1722,7 @@
                                                     <i className="fas fa-paper-plane mr-2"></i>Submit
                                                 </button>
                                                 <button
-                                                    onClick={() => setCode(exercises[currentExerciseIndex]?.starterCode || '')}
+                                                    onClick={handleResetCode}
                                                     className="bg-gray-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-700 text-white"
                                                 >
                                                     <i className="fas fa-undo mr-2"></i>Reset

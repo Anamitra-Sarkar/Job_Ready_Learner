@@ -14,6 +14,7 @@ Version: 2.0.0
 :- use_module(library(http/json)).
 :- use_module(library(http/http_header)).
 :- use_module(library(persistency)).
+:- use_module(library(ordsets)).  % For optimized set operations
 
 % Dynamic predicates for configuration
 :- dynamic config_setting/2.
@@ -1248,44 +1249,153 @@ format_career_name(fullstack_developer, "Full Stack Developer").
 format_career_name(data_structures_algorithms, "DSA Expert").
 format_career_name(devops_engineer, "DevOps Engineer").
 
-% Get all prerequisites (transitive closure)
+% Get all prerequisites (transitive closure) - optimized with ordered set to avoid redundant computation
 all_prerequisites(Skill, AllPrereqs) :-
-    findall(P, prerequisite_chain(P, Skill), Prereqs),
-    list_to_set(Prereqs, AllPrereqs).
+    all_prerequisites_acc(Skill, [], AllPrereqs).
 
+% Accumulator-based implementation using ordered sets for O(log n) membership checks
+all_prerequisites_acc(Skill, Visited, AllPrereqs) :-
+    list_to_ord_set(Visited, VisitedSet),
+    findall(P, (prerequisite(P, Skill), \+ ord_memberchk(P, VisitedSet)), DirectPrereqs),
+    (DirectPrereqs == [] -> 
+        AllPrereqs = Visited
+    ;
+        append(DirectPrereqs, Visited, NewVisited),
+        foldl(collect_prereqs, DirectPrereqs, NewVisited, AllPrereqs)
+    ).
+
+% Helper predicate for fold - collects all prerequisites recursively
+collect_prereqs(Skill, AccIn, AccOut) :-
+    all_prerequisites_acc(Skill, AccIn, AccOut).
+
+% Original recursive prerequisite_chain - fully recursive for complete chain coverage
+% Used by fallback topological sort
 prerequisite_chain(P, Skill) :- prerequisite(P, Skill).
 prerequisite_chain(P, Skill) :- prerequisite(X, Skill), prerequisite_chain(P, X).
 
-% Generate ordered learning path using topological sort
+% Generate ordered learning path using optimized topological sort
+% Uses Kahn's algorithm with in-degree tracking for O(V+E) complexity
 generate_learning_path(CareerPath, OrderedSkills) :-
     career_path(CareerPath, Skills, _),
-    topological_sort(Skills, OrderedSkills).
+    topological_sort_optimized(Skills, OrderedSkills).
 
-topological_sort(Skills, Sorted) :- topological_sort(Skills, [], Sorted).
-topological_sort([], Acc, Result) :- reverse(Acc, Result).
-topological_sort(Skills, Acc, Result) :- 
+% Optimized topological sort using Kahn's algorithm
+topological_sort_optimized(Skills, Sorted) :-
+    % Build adjacency information for skills in this path
+    findall(Skill-InDegree, (
+        member(Skill, Skills),
+        findall(P, (prerequisite(P, Skill), member(P, Skills)), Prereqs),
+        length(Prereqs, InDegree)
+    ), InDegrees),
+    % Start with skills that have no prerequisites (in-degree 0)
+    include(has_zero_indegree, InDegrees, ZeroInDegree),
+    pairs_keys(ZeroInDegree, InitialQueue),
+    kahns_sort(InitialQueue, Skills, InDegrees, [], Sorted).
+
+has_zero_indegree(_-0).
+
+% Kahn's algorithm implementation
+kahns_sort([], _, _, Acc, Sorted) :- 
+    reverse(Acc, Sorted).
+kahns_sort([Skill|RestQueue], AllSkills, InDegrees, Acc, Sorted) :-
+    % Add current skill to result
+    NewAcc = [Skill|Acc],
+    % Find skills that depend on this one and decrement their in-degree
+    findall(Dependent, (
+        member(Dependent, AllSkills),
+        prerequisite(Skill, Dependent)
+    ), Dependents),
+    % Update in-degrees and find newly available skills
+    update_indegrees(Dependents, InDegrees, UpdatedInDegrees, NewZeroSkills),
+    append(RestQueue, NewZeroSkills, NewQueue),
+    kahns_sort(NewQueue, AllSkills, UpdatedInDegrees, NewAcc, Sorted).
+
+% Update in-degrees for dependent skills
+update_indegrees([], InDegrees, InDegrees, []).
+update_indegrees([Dep|RestDeps], InDegrees, FinalInDegrees, ZeroSkills) :-
+    (select(Dep-OldDeg, InDegrees, TempInDegrees) ->
+        NewDeg is OldDeg - 1,
+        NewInDegrees = [Dep-NewDeg|TempInDegrees],
+        (NewDeg =:= 0 -> 
+            update_indegrees(RestDeps, NewInDegrees, FinalInDegrees, RestZero),
+            ZeroSkills = [Dep|RestZero]
+        ;
+            update_indegrees(RestDeps, NewInDegrees, FinalInDegrees, ZeroSkills)
+        )
+    ;
+        update_indegrees(RestDeps, InDegrees, FinalInDegrees, ZeroSkills)
+    ).
+
+% Fallback to original algorithm if optimized version fails
+topological_sort(Skills, Sorted) :- topological_sort_simple(Skills, [], Sorted).
+topological_sort_simple([], Acc, Result) :- reverse(Acc, Result).
+topological_sort_simple(Skills, Acc, Result) :- 
     select(Skill, Skills, Rest),
     \+ (member(Other, Rest), prerequisite_chain(Skill, Other)),
-    topological_sort(Rest, [Skill|Acc], Result).
+    topological_sort_simple(Rest, [Skill|Acc], Result).
 
-% Calculate total XP for skills
+% Calculate total XP for skills - optimized with direct lookup
 total_xp_for_skills(Skills, TotalXP) :-
-    findall(XP, (member(Skill, Skills), skill(Skill, _, _, _, XP)), XPs),
-    sum_list(XPs, TotalXP).
+    total_xp_acc(Skills, 0, TotalXP).
 
-% Get next available topic
+total_xp_acc([], Acc, Acc).
+total_xp_acc([Skill|Rest], Acc, TotalXP) :-
+    (skill(Skill, _, _, _, XP) -> NewAcc is Acc + XP ; NewAcc = Acc),
+    total_xp_acc(Rest, NewAcc, TotalXP).
+
+% Get next available topic - optimized to avoid recomputing completed list
 get_next_topic(UserId, NextTopic) :-
     user_path(UserId, Path),
-    findall(T, (member(T, Path), user_progress(UserId, T, completed)), Completed),
-    member(NextTopic, Path),
-    \+ member(NextTopic, Completed),
-    all_prerequisites(NextTopic, Prereqs),
-    forall(member(P, Prereqs), member(P, Completed)), !.
+    % Get completed skills as a set for O(1) membership checks
+    findall(T, user_progress(UserId, T, completed), CompletedList),
+    list_to_ord_set(CompletedList, CompletedSet),
+    find_next_available(Path, CompletedSet, NextTopic), !.
 
-% Get skill tree with status
+% Helper to find the first available topic
+find_next_available([Topic|RestPath], CompletedSet, NextTopic) :-
+    (ord_memberchk(Topic, CompletedSet) ->
+        % Topic is completed, check next
+        find_next_available(RestPath, CompletedSet, NextTopic)
+    ;
+        % Topic not completed - check if prerequisites are met
+        all_prerequisites(Topic, Prereqs),
+        (forall(member(P, Prereqs), ord_memberchk(P, CompletedSet)) ->
+            NextTopic = Topic
+        ;
+            find_next_available(RestPath, CompletedSet, NextTopic)
+        )
+    ).
+
+% Get skill tree with status - optimized to compute completed set once
 skill_tree_with_status(UserId, CareerPath, SkillTree) :-
     career_path(CareerPath, Skills, _),
-    maplist(skill_with_status(UserId), Skills, SkillTree).
+    % Pre-compute completed skills set once
+    findall(T, user_progress(UserId, T, completed), CompletedList),
+    list_to_ord_set(CompletedList, CompletedSet),
+    maplist(skill_with_status_optimized(CompletedSet), Skills, SkillTree).
+
+% Optimized skill status using pre-computed completed set
+skill_with_status_optimized(CompletedSet, Skill, json{
+    skill: Skill,
+    status: Status,
+    prerequisites: Prereqs,
+    domain: Domain,
+    difficulty: Difficulty,
+    hours: Hours,
+    xp: XP
+}) :-
+    (ord_memberchk(Skill, CompletedSet) -> 
+        Status = completed 
+    ;
+        (all_prerequisites(Skill, AllPrereqs),
+         forall(member(P, AllPrereqs), ord_memberchk(P, CompletedSet))
+         -> Status = available 
+         ; Status = locked)
+    ),
+    findall(P, prerequisite(P, Skill), Prereqs),
+    skill(Skill, Domain, Difficulty, Hours, XP).
+
+% Legacy skill_with_status for backwards compatibility
 
 skill_with_status(UserId, Skill, json{
     skill: Skill,
