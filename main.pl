@@ -1249,13 +1249,14 @@ format_career_name(fullstack_developer, "Full Stack Developer").
 format_career_name(data_structures_algorithms, "DSA Expert").
 format_career_name(devops_engineer, "DevOps Engineer").
 
-% Get all prerequisites (transitive closure) - optimized with visited set to avoid redundant computation
+% Get all prerequisites (transitive closure) - optimized with ordered set to avoid redundant computation
 all_prerequisites(Skill, AllPrereqs) :-
     all_prerequisites_acc(Skill, [], AllPrereqs).
 
-% Accumulator-based implementation to avoid recomputing the same prerequisites
+% Accumulator-based implementation using ordered sets for O(log n) membership checks
 all_prerequisites_acc(Skill, Visited, AllPrereqs) :-
-    findall(P, (prerequisite(P, Skill), \+ member(P, Visited)), DirectPrereqs),
+    list_to_ord_set(Visited, VisitedSet),
+    findall(P, (prerequisite(P, Skill), \+ ord_memberchk(P, VisitedSet)), DirectPrereqs),
     (DirectPrereqs == [] -> 
         AllPrereqs = Visited
     ;
@@ -1267,10 +1268,10 @@ all_prerequisites_acc(Skill, Visited, AllPrereqs) :-
 collect_prereqs(Skill, AccIn, AccOut) :-
     all_prerequisites_acc(Skill, AccIn, AccOut).
 
-% Legacy prerequisite_chain kept for backwards compatibility but optimized
+% Original recursive prerequisite_chain - fully recursive for complete chain coverage
+% Used by fallback topological sort
 prerequisite_chain(P, Skill) :- prerequisite(P, Skill).
-prerequisite_chain(P, Skill) :- prerequisite(X, Skill), prerequisite(P, X).
-prerequisite_chain(P, Skill) :- prerequisite(X, Skill), prerequisite(Y, X), prerequisite(P, Y).
+prerequisite_chain(P, Skill) :- prerequisite(X, Skill), prerequisite_chain(P, X).
 
 % Generate ordered learning path using optimized topological sort
 % Uses Kahn's algorithm with in-degree tracking for O(V+E) complexity

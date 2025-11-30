@@ -877,9 +877,10 @@
                 document.body.appendChild(fragment);
                 
                 // Schedule single cleanup instead of 50 individual timeouts
+                // Using 3000ms to match the CSS animation duration
                 setTimeout(() => {
                     confettiPieces.forEach(piece => piece.remove());
-                }, 5000);
+                }, 3000);
             };
 
             // Fetch projects
