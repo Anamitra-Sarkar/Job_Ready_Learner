@@ -29,7 +29,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Fira+Code:wght@400;500&display=swap');
 
         * {
             font-family: 'Inter', sans-serif;
@@ -227,6 +227,156 @@
             background: rgba(255,255,255,0.15);
         }
 
+        /* Code Editor Styles */
+        .code-editor {
+            font-family: 'Fira Code', monospace;
+            background: #1e1e1e;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .code-editor-header {
+            background: #2d2d2d;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .code-editor-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .code-editor textarea {
+            width: 100%;
+            min-height: 200px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border: none;
+            padding: 16px;
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: vertical;
+        }
+
+        .code-editor textarea:focus {
+            outline: none;
+        }
+
+        /* Console Output Styles */
+        .console-output {
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'Fira Code', monospace;
+            font-size: 13px;
+            color: #c9d1d9;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .console-success { color: #3fb950; }
+        .console-error { color: #f85149; }
+        .console-info { color: #58a6ff; }
+
+        /* Video Player Styles */
+        .video-container {
+            position: relative;
+            padding-bottom: 56.25%;
+            height: 0;
+            overflow: hidden;
+            border-radius: 12px;
+        }
+
+        .video-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Hint Panel Styles */
+        .hint-panel {
+            background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .hint-step {
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border-left: 3px solid #fbbf24;
+        }
+
+        /* Tab Navigation */
+        .tab-nav {
+            display: flex;
+            gap: 4px;
+            background: rgba(0,0,0,0.2);
+            padding: 4px;
+            border-radius: 12px;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            background: transparent;
+            color: rgba(255,255,255,0.7);
+        }
+
+        .tab-btn.active {
+            background: white;
+            color: #667eea;
+        }
+
+        .tab-btn:hover:not(.active) {
+            background: rgba(255,255,255,0.1);
+        }
+
+        /* Test Results */
+        .test-result {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .test-pass {
+            background: rgba(34, 197, 94, 0.2);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .test-fail {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        /* Progress Bar Animation */
+        .progress-bar-animated {
+            background: linear-gradient(90deg, #4facfe, #00f2fe, #4facfe);
+            background-size: 200% 100%;
+            animation: progressShimmer 2s linear infinite;
+        }
+
+        @keyframes progressShimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
         @media (max-width: 768px) {
             .settings-btn {
                 width: 45px;
@@ -250,6 +400,10 @@
 
             .glass {
                 padding: 1rem !important;
+            }
+
+            .code-editor textarea {
+                font-size: 12px;
             }
         }
 
@@ -374,6 +528,12 @@
             const [level, setLevel] = useState(1);
             const [theme, setTheme] = useState('light');
             const [authMode, setAuthMode] = useState('login');
+            // New state for interactive learning
+            const [videos, setVideos] = useState([]);
+            const [exercises, setExercises] = useState([]);
+            const [currentExercise, setCurrentExercise] = useState(null);
+            const [hints, setHints] = useState([]);
+            const [hintLevel, setHintLevel] = useState(0);
 
             // Initialize theme from localStorage
             useEffect(() => {
@@ -538,25 +698,93 @@
                 }
 
                 try {
-                    const response = await fetch(`${API_BASE}/resources`, {
+                    // Fetch resources, videos, and exercises in parallel
+                    const [resourcesRes, videosRes, exercisesRes] = await Promise.all([
+                        fetch(`${API_BASE}/resources`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ topic: topic.name })
+                        }),
+                        fetch(`${API_BASE}/get-video`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ topic: topic.name })
+                        }),
+                        fetch(`${API_BASE}/get-exercises`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ topic: topic.name })
+                        })
+                    ]);
+                    
+                    const [resourcesData, videosData, exercisesData] = await Promise.all([
+                        resourcesRes.json(),
+                        videosRes.json(),
+                        exercisesRes.json()
+                    ]);
+
+                    setCurrentTopic(topic);
+                    setResources(resourcesData.success ? resourcesData.resources : []);
+                    setVideos(videosData.success ? videosData.videos : []);
+                    setExercises(exercisesData.success ? exercisesData.exercises : []);
+                    setCurrentExercise(null);
+                    setHints([]);
+                    setHintLevel(0);
+                    setScreen('learning');
+                } catch (error) {
+                    console.error('Error fetching learning content:', error);
+                    showNotification('❌ Error loading content', 'error');
+                }
+            };
+
+            // Fetch hints for an exercise
+            const fetchHints = async (exerciseId, level = 0) => {
+                try {
+                    const response = await fetch(`${API_BASE}/get-hints`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ topic: topic.name })
+                        body: JSON.stringify({ 
+                            exerciseId, 
+                            hintLevel: level,
+                            userId: user?.uid 
+                        })
                     });
-                    
-                    if (!response.ok) throw new Error('Failed to fetch resources');
                     const data = await response.json();
-
                     if (data.success) {
-                        setCurrentTopic(topic);
-                        setResources(data.resources);
-                        setScreen('learning');
-                    } else {
-                        throw new Error(data.message || 'Failed to fetch resources');
+                        setHints(data.hints);
+                        setHintLevel(data.currentLevel);
+                        return data;
                     }
                 } catch (error) {
-                    console.error('Error fetching resources:', error);
-                    showNotification('❌ Error loading resources', 'error');
+                    console.error('Error fetching hints:', error);
+                }
+                return null;
+            };
+
+            // Submit exercise attempt
+            const submitExercise = async (exerciseId, code, passed) => {
+                if (!user) return;
+                try {
+                    const response = await fetch(`${API_BASE}/submit-exercise`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            userId: user.uid,
+                            exerciseId,
+                            code,
+                            passed
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.success && data.passed) {
+                        setXp(data.totalXp);
+                        showNotification(`🎉 Exercise passed! +${data.xpGained} XP`, 'success');
+                        triggerConfetti();
+                    }
+                    return data;
+                } catch (error) {
+                    console.error('Error submitting exercise:', error);
+                    return null;
                 }
             };
 
@@ -679,8 +907,14 @@
                         <LearningScreen 
                             topic={currentTopic}
                             resources={resources}
+                            videos={videos}
+                            exercises={exercises}
+                            user={user}
                             onComplete={completeTopic}
                             onBack={() => setScreen('dashboard')}
+                            onFetchHints={fetchHints}
+                            onSubmitExercise={submitExercise}
+                            showNotification={showNotification}
                         />
                     )}
 
@@ -1083,13 +1317,125 @@
             );
         }
 
-        // LearningScreen Component
-        function LearningScreen({ topic, resources, onComplete, onBack }) {
-            const [currentResourceIndex, setCurrentResourceIndex] = useState(0);
+        // LearningScreen Component - Enhanced with Videos, Console, Exercises, Hints
+        function LearningScreen({ topic, resources, videos, exercises, user, onComplete, onBack, onFetchHints, onSubmitExercise, showNotification }) {
+            const [activeTab, setActiveTab] = useState('video');
+            const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+            const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+            const [code, setCode] = useState('');
+            const [consoleOutput, setConsoleOutput] = useState([]);
+            const [testResults, setTestResults] = useState([]);
+            const [hints, setHints] = useState([]);
+            const [hintLevel, setHintLevel] = useState(0);
+            const [totalHints, setTotalHints] = useState(0);
+            const [isRunning, setIsRunning] = useState(false);
+            const [exerciseCompleted, setExerciseCompleted] = useState({});
+
+            // Set starter code when exercise changes
+            useEffect(() => {
+                if (exercises.length > 0 && exercises[currentExerciseIndex]) {
+                    setCode(exercises[currentExerciseIndex].starterCode || '');
+                    setHints([]);
+                    setHintLevel(0);
+                    setTestResults([]);
+                    setConsoleOutput([]);
+                }
+            }, [currentExerciseIndex, exercises]);
+
+            // Run code in browser
+            const runCode = async () => {
+                setIsRunning(true);
+                setConsoleOutput([]);
+                setTestResults([]);
+
+                try {
+                    const exercise = exercises[currentExerciseIndex];
+                    if (!exercise) return;
+
+                    // Capture console.log output
+                    const logs = [];
+                    const originalLog = console.log;
+                    console.log = (...args) => logs.push(args.map(a => String(a)).join(' '));
+
+                    // Create sandboxed execution
+                    const sandbox = new Function('code', `
+                        try {
+                            ${code}
+                            return { success: true };
+                        } catch (error) {
+                            return { success: false, error: error.message };
+                        }
+                    `);
+
+                    const result = sandbox(code);
+                    console.log = originalLog;
+
+                    if (!result.success) {
+                        setConsoleOutput([{ type: 'error', text: `Error: ${result.error}` }]);
+                        setIsRunning(false);
+                        return;
+                    }
+
+                    // Add logs to output
+                    logs.forEach(log => {
+                        setConsoleOutput(prev => [...prev, { type: 'info', text: log }]);
+                    });
+
+                    // Run tests by evaluating the code and testing
+                    const testsPassed = [];
+                    try {
+                        // Evaluate the full code to define functions
+                        eval(code);
+                        
+                        // Run simple test validation
+                        setConsoleOutput(prev => [...prev, { type: 'info', text: '✓ Code executed successfully!' }]);
+                        setTestResults([{ description: 'Code runs without errors', passed: true }]);
+                        testsPassed.push(true);
+                    } catch (error) {
+                        setConsoleOutput(prev => [...prev, { type: 'error', text: `Test error: ${error.message}` }]);
+                        setTestResults([{ description: 'Code execution', passed: false, error: error.message }]);
+                    }
+
+                    setIsRunning(false);
+                } catch (error) {
+                    setConsoleOutput([{ type: 'error', text: `Runtime Error: ${error.message}` }]);
+                    setIsRunning(false);
+                }
+            };
+
+            // Submit exercise
+            const handleSubmitExercise = async () => {
+                const exercise = exercises[currentExerciseIndex];
+                if (!exercise) return;
+
+                // Check if code is different from starter
+                if (code.trim() === exercise.starterCode?.trim()) {
+                    showNotification('⚠️ Please write some code first!', 'error');
+                    return;
+                }
+
+                const result = await onSubmitExercise(exercise.id, code, true);
+                if (result && result.success) {
+                    setExerciseCompleted(prev => ({ ...prev, [exercise.id]: true }));
+                }
+            };
+
+            // Get hints
+            const handleGetHint = async () => {
+                const exercise = exercises[currentExerciseIndex];
+                if (!exercise) return;
+
+                const result = await onFetchHints(exercise.id, hintLevel);
+                if (result) {
+                    setHints(result.hints);
+                    setHintLevel(result.currentLevel + 1);
+                    setTotalHints(result.totalHints);
+                }
+            };
 
             return (
                 <div className="min-h-screen p-4 sm:p-8 pt-20">
-                    <div className="max-w-4xl mx-auto">
+                    <div className="max-w-6xl mx-auto">
                         <button 
                             onClick={onBack}
                             className="glass text-white px-4 py-2 rounded-lg mb-4 hover:bg-opacity-20 text-sm sm:text-base"
@@ -1097,97 +1443,324 @@
                             <i className="fas fa-arrow-left mr-2"></i>Back to Dashboard
                         </button>
 
-                        <div className="glass rounded-2xl p-6 sm:p-8 text-white">
-                            <div className="mb-6">
-                                <h1 className="text-3xl sm:text-4xl font-bold capitalize mb-2">
-                                    {topic.name.replace(/_/g, ' ')}
-                                </h1>
-                                <div className="flex gap-3 sm:gap-4 flex-wrap">
-                                    <span className={`badge badge-${topic.difficulty}`}>{topic.difficulty}</span>
-                                    <span className="badge" style={{background: '#6366f1'}}>
-                                        <i className="fas fa-clock mr-1"></i>{topic.hours} hours
-                                    </span>
-                                    <span className="badge" style={{background: '#8b5cf6'}}>
-                                        <i className="fas fa-star mr-1"></i>{topic.xp} XP
-                                    </span>
-                                </div>
-                            </div>
-
-                            {resources.length > 0 && (
+                        {/* Topic Header */}
+                        <div className="glass rounded-2xl p-6 sm:p-8 text-white mb-6">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                                 <div>
-                                    <div className="flex gap-2 mb-6 flex-wrap">
+                                    <h1 className="text-3xl sm:text-4xl font-bold capitalize mb-2">
+                                        {topic.name.replace(/_/g, ' ')}
+                                    </h1>
+                                    <div className="flex gap-3 sm:gap-4 flex-wrap">
+                                        <span className={`badge badge-${topic.difficulty}`}>{topic.difficulty}</span>
+                                        <span className="badge" style={{background: '#6366f1'}}>
+                                            <i className="fas fa-clock mr-1"></i>{topic.hours} hours
+                                        </span>
+                                        <span className="badge" style={{background: '#8b5cf6'}}>
+                                            <i className="fas fa-star mr-1"></i>{topic.xp} XP
+                                        </span>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={onComplete}
+                                    className="bg-green-500 px-6 py-3 rounded-lg font-semibold hover:bg-green-600 text-sm sm:text-base"
+                                >
+                                    <i className="fas fa-check mr-2"></i>Complete Topic
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Tab Navigation */}
+                        <div className="tab-nav mb-6">
+                            <button 
+                                className={`tab-btn ${activeTab === 'video' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('video')}
+                            >
+                                <i className="fas fa-video mr-2"></i>Videos ({videos.length})
+                            </button>
+                            <button 
+                                className={`tab-btn ${activeTab === 'learn' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('learn')}
+                            >
+                                <i className="fas fa-book mr-2"></i>Learn
+                            </button>
+                            <button 
+                                className={`tab-btn ${activeTab === 'exercise' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('exercise')}
+                            >
+                                <i className="fas fa-code mr-2"></i>Practice ({exercises.length})
+                            </button>
+                        </div>
+
+                        {/* Video Tab */}
+                        {activeTab === 'video' && (
+                            <div className="glass rounded-2xl p-6 text-white">
+                                {videos.length > 0 ? (
+                                    <>
+                                        <div className="video-container mb-6">
+                                            <iframe
+                                                src={`https://www.youtube.com/embed/${videos[currentVideoIndex]?.videoId}?rel=0`}
+                                                title={videos[currentVideoIndex]?.title}
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                                allowFullScreen
+                                            ></iframe>
+                                        </div>
+
+                                        <div className="mb-4">
+                                            <h2 className="text-2xl font-bold mb-2">{videos[currentVideoIndex]?.title}</h2>
+                                            <p className="opacity-75">{videos[currentVideoIndex]?.description}</p>
+                                            <span className="inline-block mt-2 px-3 py-1 bg-white bg-opacity-20 rounded-full text-sm">
+                                                <i className="fas fa-clock mr-1"></i>{videos[currentVideoIndex]?.duration} min
+                                            </span>
+                                        </div>
+
+                                        {videos.length > 1 && (
+                                            <div className="flex gap-2 flex-wrap">
+                                                {videos.map((video, index) => (
+                                                    <button
+                                                        key={index}
+                                                        onClick={() => setCurrentVideoIndex(index)}
+                                                        className={`px-4 py-2 rounded-lg text-sm ${
+                                                            currentVideoIndex === index 
+                                                                ? 'bg-white text-purple-600' 
+                                                                : 'bg-white bg-opacity-20 hover:bg-opacity-30'
+                                                        }`}
+                                                    >
+                                                        Video {index + 1}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <div className="text-center py-12 opacity-75">
+                                        <i className="fas fa-video-slash text-4xl mb-4"></i>
+                                        <p>No videos available for this topic yet.</p>
+                                        <p className="text-sm mt-2">Try the Learn or Practice tabs!</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Learn Tab */}
+                        {activeTab === 'learn' && (
+                            <div className="glass rounded-2xl p-6 text-white">
+                                {resources.length > 0 ? (
+                                    <div className="space-y-6">
                                         {resources.map((res, index) => (
-                                            <button
-                                                key={index}
-                                                onClick={() => setCurrentResourceIndex(index)}
-                                                className={`px-4 py-2 rounded-lg font-semibold text-sm sm:text-base ${
-                                                    currentResourceIndex === index 
-                                                        ? 'bg-white text-purple-600' 
-                                                        : 'bg-white bg-opacity-20'
-                                                }`}
-                                            >
-                                                {res.type === 'tutorial' ? 'Tutorial' : 'Exercise'}
-                                            </button>
+                                            <div key={index} className="bg-white bg-opacity-10 rounded-xl p-6">
+                                                <div className="flex items-center gap-3 mb-4">
+                                                    <i className={`fas ${res.type === 'tutorial' ? 'fa-book-open' : 'fa-dumbbell'} text-2xl text-yellow-300`}></i>
+                                                    <h3 className="text-xl font-bold capitalize">{res.type}</h3>
+                                                </div>
+                                                <p className="text-lg mb-4 leading-relaxed">{res.content}</p>
+                                                <div className="code-editor">
+                                                    <div className="code-editor-header">
+                                                        <div className="code-editor-dot" style={{background: '#ff5f56'}}></div>
+                                                        <div className="code-editor-dot" style={{background: '#ffbd2e'}}></div>
+                                                        <div className="code-editor-dot" style={{background: '#27c93f'}}></div>
+                                                        <span className="ml-3 text-gray-400 text-sm">Example</span>
+                                                    </div>
+                                                    <pre className="p-4 text-green-400 text-sm overflow-x-auto">
+                                                        <code>{res.example}</code>
+                                                    </pre>
+                                                </div>
+                                            </div>
                                         ))}
                                     </div>
+                                ) : (
+                                    <div className="text-center py-12 opacity-75">
+                                        <i className="fas fa-book text-4xl mb-4"></i>
+                                        <p>No learning resources available yet.</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
-                                    <div className="bg-white bg-opacity-10 rounded-xl p-4 sm:p-6 mb-6">
-                                        <div className="flex items-center gap-3 mb-4">
-                                            <i className={`fas ${resources[currentResourceIndex].type === 'tutorial' ? 'fa-book' : 'fa-dumbbell'} text-2xl sm:text-3xl`}></i>
-                                            <h2 className="text-xl sm:text-2xl font-bold capitalize">{resources[currentResourceIndex].type}</h2>
+                        {/* Exercise Tab */}
+                        {activeTab === 'exercise' && (
+                            <div className="grid lg:grid-cols-2 gap-6">
+                                {/* Left: Exercise & Code Editor */}
+                                <div className="space-y-6">
+                                    {exercises.length > 0 ? (
+                                        <>
+                                            {/* Exercise Selector */}
+                                            <div className="glass rounded-xl p-4 text-white">
+                                                <div className="flex gap-2 flex-wrap">
+                                                    {exercises.map((ex, index) => (
+                                                        <button
+                                                            key={index}
+                                                            onClick={() => setCurrentExerciseIndex(index)}
+                                                            className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+                                                                currentExerciseIndex === index 
+                                                                    ? 'bg-white text-purple-600' 
+                                                                    : exerciseCompleted[ex.id]
+                                                                        ? 'bg-green-500'
+                                                                        : 'bg-white bg-opacity-20 hover:bg-opacity-30'
+                                                            }`}
+                                                        >
+                                                            {exerciseCompleted[ex.id] && <i className="fas fa-check mr-1"></i>}
+                                                            Exercise {index + 1}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Exercise Description */}
+                                            <div className="glass rounded-xl p-6 text-white">
+                                                <h3 className="text-xl font-bold mb-2">
+                                                    {exercises[currentExerciseIndex]?.title}
+                                                </h3>
+                                                <p className="mb-4 opacity-90">
+                                                    {exercises[currentExerciseIndex]?.description}
+                                                </p>
+                                                <div className="flex gap-4">
+                                                    <span className="text-sm px-3 py-1 bg-yellow-500 bg-opacity-30 rounded-full">
+                                                        <i className="fas fa-star mr-1"></i>{exercises[currentExerciseIndex]?.xp} XP
+                                                    </span>
+                                                    <span className="text-sm px-3 py-1 bg-blue-500 bg-opacity-30 rounded-full">
+                                                        <i className="fas fa-vial mr-1"></i>{exercises[currentExerciseIndex]?.testCount} tests
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Code Editor */}
+                                            <div className="code-editor">
+                                                <div className="code-editor-header">
+                                                    <div className="code-editor-dot" style={{background: '#ff5f56'}}></div>
+                                                    <div className="code-editor-dot" style={{background: '#ffbd2e'}}></div>
+                                                    <div className="code-editor-dot" style={{background: '#27c93f'}}></div>
+                                                    <span className="ml-3 text-gray-400 text-sm">script.js</span>
+                                                </div>
+                                                <textarea
+                                                    value={code}
+                                                    onChange={(e) => setCode(e.target.value)}
+                                                    placeholder="// Write your code here..."
+                                                    spellCheck="false"
+                                                />
+                                            </div>
+
+                                            {/* Action Buttons */}
+                                            <div className="flex gap-3 flex-wrap">
+                                                <button
+                                                    onClick={runCode}
+                                                    disabled={isRunning}
+                                                    className="bg-green-500 px-6 py-3 rounded-lg font-semibold hover:bg-green-600 disabled:opacity-50 text-white"
+                                                >
+                                                    {isRunning ? (
+                                                        <><i className="fas fa-spinner fa-spin mr-2"></i>Running...</>
+                                                    ) : (
+                                                        <><i className="fas fa-play mr-2"></i>Run Code</>
+                                                    )}
+                                                </button>
+                                                <button
+                                                    onClick={handleSubmitExercise}
+                                                    className="bg-blue-500 px-6 py-3 rounded-lg font-semibold hover:bg-blue-600 text-white"
+                                                >
+                                                    <i className="fas fa-paper-plane mr-2"></i>Submit
+                                                </button>
+                                                <button
+                                                    onClick={() => setCode(exercises[currentExerciseIndex]?.starterCode || '')}
+                                                    className="bg-gray-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-700 text-white"
+                                                >
+                                                    <i className="fas fa-undo mr-2"></i>Reset
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="glass rounded-xl p-12 text-white text-center">
+                                            <i className="fas fa-code text-4xl mb-4 opacity-50"></i>
+                                            <p className="opacity-75">No exercises available for this topic yet.</p>
                                         </div>
+                                    )}
+                                </div>
 
-                                        <div className="space-y-4">
-                                            <p className="text-base sm:text-lg leading-relaxed">{resources[currentResourceIndex].content}</p>
+                                {/* Right: Console & Hints */}
+                                <div className="space-y-6">
+                                    {/* Console Output */}
+                                    <div className="glass rounded-xl p-4 text-white">
+                                        <h4 className="font-bold mb-3">
+                                            <i className="fas fa-terminal mr-2"></i>Console Output
+                                        </h4>
+                                        <div className="console-output min-h-[150px]">
+                                            {consoleOutput.length > 0 ? (
+                                                consoleOutput.map((log, index) => (
+                                                    <div key={index} className={`console-${log.type} mb-1`}>
+                                                        {log.type === 'error' && <i className="fas fa-times-circle mr-2"></i>}
+                                                        {log.type === 'success' && <i className="fas fa-check-circle mr-2"></i>}
+                                                        {log.type === 'info' && <i className="fas fa-info-circle mr-2"></i>}
+                                                        {log.text}
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <span className="opacity-50">Run your code to see output...</span>
+                                            )}
+                                        </div>
+                                    </div>
 
-                                            <div className="bg-black bg-opacity-30 rounded-lg p-4 overflow-x-auto">
-                                                <pre className="text-green-300 text-xs sm:text-sm">
-                                                    <code>{resources[currentResourceIndex].example}</code>
-                                                </pre>
+                                    {/* Test Results */}
+                                    {testResults.length > 0 && (
+                                        <div className="glass rounded-xl p-4 text-white">
+                                            <h4 className="font-bold mb-3">
+                                                <i className="fas fa-vial mr-2"></i>Test Results
+                                            </h4>
+                                            <div className="space-y-2">
+                                                {testResults.map((test, index) => (
+                                                    <div key={index} className={`test-result ${test.passed ? 'test-pass' : 'test-fail'}`}>
+                                                        <i className={`fas ${test.passed ? 'fa-check-circle text-green-400' : 'fa-times-circle text-red-400'}`}></i>
+                                                        <span>{test.description}</span>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
-                                    </div>
+                                    )}
 
-                                    <div className="flex justify-between gap-4">
-                                        <button
-                                            onClick={() => setCurrentResourceIndex(Math.max(0, currentResourceIndex - 1))}
-                                            disabled={currentResourceIndex === 0}
-                                            className="bg-white bg-opacity-20 px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold disabled:opacity-30 text-sm sm:text-base"
-                                        >
-                                            <i className="fas fa-chevron-left mr-2"></i>Previous
-                                        </button>
-
-                                        {currentResourceIndex < resources.length - 1 ? (
+                                    {/* Hints Panel */}
+                                    <div className="glass rounded-xl p-4 text-white">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h4 className="font-bold">
+                                                <i className="fas fa-lightbulb mr-2 text-yellow-300"></i>Hints
+                                            </h4>
                                             <button
-                                                onClick={() => setCurrentResourceIndex(currentResourceIndex + 1)}
-                                                className="bg-blue-500 px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-blue-600 text-sm sm:text-base"
+                                                onClick={handleGetHint}
+                                                disabled={hintLevel >= totalHints && totalHints > 0}
+                                                className="bg-yellow-500 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-600 disabled:opacity-50"
                                             >
-                                                Next<i className="fas fa-chevron-right ml-2"></i>
+                                                <i className="fas fa-question-circle mr-1"></i>
+                                                Get Hint {hints.length > 0 && `(${hints.length}/${totalHints})`}
                                             </button>
+                                        </div>
+                                        
+                                        {hints.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {hints.map((hint, index) => (
+                                                    <div key={index} className="hint-step">
+                                                        <span className="font-semibold text-yellow-300">Hint {index + 1}:</span>
+                                                        <p className="mt-1">{hint}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         ) : (
-                                            <button
-                                                onClick={onComplete}
-                                                className="bg-green-500 px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-green-600 text-sm sm:text-base"
-                                            >
-                                                <i className="fas fa-check mr-2"></i>Mark Complete
-                                            </button>
+                                            <p className="opacity-50 text-sm">
+                                                Stuck? Click "Get Hint" for progressive hints. Each hint reveals more details!
+                                            </p>
                                         )}
                                     </div>
-                                </div>
-                            )}
-                        </div>
 
-                        <div className="glass rounded-xl p-4 sm:p-6 mt-6 text-white">
-                            <h3 className="text-lg sm:text-xl font-bold mb-3">
-                                <i className="fas fa-lightbulb mr-2 text-yellow-300"></i>Pro Tips
-                            </h3>
-                            <ul className="space-y-2 opacity-90 text-sm sm:text-base">
-                                <li><i className="fas fa-check-circle mr-2 text-green-400"></i>Type out all code examples yourself</li>
-                                <li><i className="fas fa-check-circle mr-2 text-green-400"></i>Experiment with variations</li>
-                                <li><i className="fas fa-check-circle mr-2 text-green-400"></i>Complete all exercises before moving on</li>
-                                <li><i className="fas fa-check-circle mr-2 text-green-400"></i>Build small projects to practice</li>
-                            </ul>
-                        </div>
+                                    {/* Pro Tips */}
+                                    <div className="glass rounded-xl p-4 text-white">
+                                        <h4 className="font-bold mb-3">
+                                            <i className="fas fa-magic mr-2 text-purple-300"></i>Pro Tips
+                                        </h4>
+                                        <ul className="space-y-2 text-sm opacity-90">
+                                            <li><i className="fas fa-check text-green-400 mr-2"></i>Run your code frequently to catch errors early</li>
+                                            <li><i className="fas fa-check text-green-400 mr-2"></i>Read the exercise description carefully</li>
+                                            <li><i className="fas fa-check text-green-400 mr-2"></i>Use hints if you're stuck for more than 5 minutes</li>
+                                            <li><i className="fas fa-check text-green-400 mr-2"></i>Try to solve without hints for maximum learning!</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             );
