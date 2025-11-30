@@ -1,8 +1,9 @@
 /*
 ==============================================
 JOB READY PLATFORM - PRODUCTION PROLOG BACKEND
+Datacamp-style interactive learning platform
 Rate limiting, input validation, persistence, CORS, error handling
-Version: 1.0.0
+Version: 2.0.0
 ==============================================
 */
 
@@ -10,23 +11,30 @@ Version: 1.0.0
 :- use_module(library(http/http_dispatch)).
 :- use_module(library(http/http_parameters)).
 :- use_module(library(http/http_json)).
-:- use_module(library(http/cors)).
 :- use_module(library(http/json)).
 :- use_module(library(http/http_header)).
 :- use_module(library(persistency)).
-:- use_module(library(settings)).
 
-% Production settings
-:- setting(allowed_origins, list, ['http://localhost:3000', 'http://localhost']).
-:- setting(enable_rate_limit, boolean, true).
-:- setting(max_requests_per_minute, integer, 60).
-:- setting(log_level, atom, info). % debug, info, warn, error
+% Dynamic predicates for configuration
+:- dynamic config_setting/2.
+
+% Initialize config settings
+% Note: In development, '*' allows all origins. For production, replace with your actual domain.
+:- assertz(config_setting(allowed_origins, ['http://localhost:3000', 'http://localhost', 'http://localhost:8080'])).
+:- assertz(config_setting(enable_rate_limit, true)).
+:- assertz(config_setting(max_requests_per_minute, 60)).
+:- assertz(config_setting(log_level, info)).
+
+% Config setting getter
+get_config(Key, Value) :-
+    config_setting(Key, Value), !.
+get_config(_, _) :- fail.
 
 % Dynamic predicates for rate limiting
 :- dynamic request_count/3.  % request_count(IP, Endpoint, Count)
 :- dynamic last_cleanup/1.   % last_cleanup(Timestamp)
 
-% HTTP Route Handlers
+% HTTP Route Handlers - Core
 :- http_handler(root(.), http_redirect(moved, '/index.html'), []).
 :- http_handler('/api/generate-path', handle_generate_path, [method(post)]).
 :- http_handler('/api/progress', handle_get_progress, [method(get)]).
@@ -39,20 +47,29 @@ Version: 1.0.0
 :- http_handler('/api/health', handle_health, [method(get)]).
 :- http_handler(root(api/), handle_options, [method(options), prefix]).
 
+% HTTP Route Handlers - New Interactive Learning Features
+:- http_handler('/api/get-video', handle_get_video, [method(post)]).
+:- http_handler('/api/get-exercises', handle_get_exercises, [method(post)]).
+:- http_handler('/api/submit-exercise', handle_submit_exercise, [method(post)]).
+:- http_handler('/api/get-hints', handle_get_hints, [method(post)]).
+:- http_handler('/api/run-code', handle_run_code, [method(post)]).
+:- http_handler('/api/get-exercise-attempts', handle_get_exercise_attempts, [method(post)]).
+:- http_handler('/api/get-detailed-progress', handle_get_detailed_progress, [method(get)]).
+
 % CORS preflight handler
 handle_options(Request) :-
     cors_enable_with_origin(Request),
-    throw(http_reply(no_content)).
+    format('Status: 204 No Content~n~n', []).
 
 % Rate limiting implementation
+check_rate_limit(_Request, _Endpoint) :-
+    get_config(enable_rate_limit, false), !.
 check_rate_limit(Request, Endpoint) :-
-    setting(enable_rate_limit, false), !.
-check_rate_limit(Request, Endpoint) :-
-    setting(enable_rate_limit, true),
+    get_config(enable_rate_limit, true),
     (memberchk(peer(IP), Request) -> true ; IP = unknown),
     get_time(Now),
     cleanup_old_counts(Now),
-    setting(max_requests_per_minute, MaxRequests),
+    get_config(max_requests_per_minute, MaxRequests),
     (request_count(IP, Endpoint, Count) ->
         (Count >= MaxRequests ->
             throw(http_reply(too_many_requests(
@@ -84,7 +101,11 @@ cleanup_old_counts(Now) :-
     user_progress(user_id:atom, topic:atom, status:atom),
     user_path(user_id:atom, path:list),
     user_xp(user_id:atom, xp:integer),
-    user_streak(user_id:atom, streak:integer).
+    user_streak(user_id:atom, streak:integer),
+    user_exercise_attempt(user_id:atom, exercise_id:atom, code:atom, passed:atom, timestamp:float),
+    user_last_activity(user_id:atom, timestamp:float),
+    user_video_watched(user_id:atom, topic:atom, video_id:atom, watched_percent:integer),
+    user_hint_used(user_id:atom, exercise_id:atom, hint_level:integer).
 
 :- db_attach('data/user_data.db', []).
 
@@ -95,17 +116,17 @@ initialize_db :-
     log_info('Database initialized: data/user_data.db').
 
 % Logging utilities
-log_debug(Message) :- setting(log_level, debug), !, format('DEBUG: ~w~n', [Message]).
+log_debug(Message) :- get_config(log_level, debug), !, format('DEBUG: ~w~n', [Message]).
 log_debug(_).
 
 log_info(Message) :- 
-    setting(log_level, Level),
+    get_config(log_level, Level),
     member(Level, [debug, info]), !,
     format('INFO: ~w~n', [Message]).
 log_info(_).
 
 log_warn(Message) :- 
-    setting(log_level, Level),
+    get_config(log_level, Level),
     member(Level, [debug, info, warn]), !,
     format('WARN: ~w~n', [Message]).
 log_warn(_).
@@ -398,6 +419,298 @@ project(advanced, 'Project Management Tool', [fullstack_developer], 'Trello-like
 project(advanced, 'Code Editor Online', [react_basics, nodejs_basics, state_management], 'Browser-based code editor', 'Multiple languages').
 
 %==============================================
+% VIDEO LESSONS DATABASE
+% Format: video(Topic, VideoId, Title, Duration, Description)
+% VideoId is YouTube video ID for embedding
+%==============================================
+
+% Programming Basics Videos
+video(variables, 'Bv_5Zv5c-Ts', 'JavaScript Variables Explained', 12, 'Learn var, let, and const in JavaScript').
+video(variables, 'edlFjlzxkSI', 'Variables in Programming', 8, 'Understanding variables in any programming language').
+video(data_types, 'O5H0XTz2c5k', 'JavaScript Data Types', 15, 'Strings, Numbers, Booleans, Objects, and more').
+video(data_types, 'AWfA95eLdq8', 'Data Types Tutorial', 10, 'Complete guide to data types').
+video(operators, 'FZzyij43A54', 'JavaScript Operators Tutorial', 18, 'Arithmetic, comparison, logical operators').
+video(conditionals, 'IsG4Xd6LlsM', 'If Else Statements', 14, 'Control flow with conditionals').
+video(conditionals, 'JftlCt9Lao8', 'Switch Statements in JS', 8, 'Alternative to if-else chains').
+video(loops, 'x2RNw4M6cME', 'JavaScript Loops Tutorial', 20, 'For, while, do-while, for...of loops').
+video(loops, 's9wW2PpJsmQ', 'Loop Through Arrays', 12, 'Iterating over arrays effectively').
+video(arrays, 'oigfaZ5ApsM', 'JavaScript Arrays Explained', 25, 'Array methods and manipulation').
+video(arrays, 'R8rmfD9Y5-c', 'Array Methods Tutorial', 30, 'Map, filter, reduce, and more').
+video(strings, 'VRz0nbax0uI', 'JavaScript Strings', 18, 'String methods and manipulation').
+video(functions, 'N8ap4k_1QEQ', 'JavaScript Functions Tutorial', 28, 'Function declarations and expressions').
+video(functions, 'gigtS_5KOqo', 'Arrow Functions in JavaScript', 10, 'Modern function syntax').
+video(recursion, 'vPEJSJMg4jY', 'Recursion Explained', 15, 'Understanding recursive functions').
+video(recursion, 'k7-N8R0-KY4', 'Recursion Examples', 20, 'Practical recursion problems').
+
+% OOP Videos
+video(classes, 'PFmuCDHHpwk', 'JavaScript Classes Tutorial', 22, 'ES6 classes explained').
+video(objects, 'PFmuCDHHpwk', 'JavaScript Objects', 25, 'Creating and using objects').
+video(inheritance, '_cgHGnq2_bc', 'Inheritance in JavaScript', 18, 'Extending classes').
+video(polymorphism, 'wfMtDGfHWpA', 'Polymorphism Explained', 12, 'Same method, different behavior').
+video(encapsulation, '1wKSR1hCRpY', 'Encapsulation in OOP', 14, 'Private fields and methods').
+
+% Data Structures Videos
+video(linked_lists, 'F8AbOfQwl1c', 'Linked Lists Explained', 20, 'Singly and doubly linked lists').
+video(stacks, 'wjI1WNcIntg', 'Stack Data Structure', 15, 'LIFO operations explained').
+video(queues, 'wjI1WNcIntg', 'Queue Data Structure', 12, 'FIFO operations explained').
+video(hash_tables, '2E54GqF0H4s', 'Hash Tables Explained', 22, 'Hash functions and collision handling').
+video(trees, 'oSWTXtMglKE', 'Tree Data Structures', 25, 'Binary trees and traversals').
+video(binary_trees, '76dhtgZt38A', 'Binary Trees Tutorial', 20, 'Implementation and operations').
+video(bst, 'pYT9F8_LFTM', 'Binary Search Trees', 25, 'BST operations explained').
+video(graphs, 'tWVWeAqZ0WU', 'Graph Data Structure', 30, 'Representations and traversals').
+
+% Algorithms Videos
+video(searching, 'j5uXyPJ0Pew', 'Searching Algorithms', 18, 'Linear and binary search').
+video(sorting, 'RfXt_qHDEPw', 'Sorting Algorithms Explained', 35, 'Bubble, merge, quick sort').
+video(divide_conquer, 'YOh6hBtX5l0', 'Divide and Conquer', 20, 'Algorithm design technique').
+video(dynamic_programming, 'oBt53YbR9Kk', 'Dynamic Programming Tutorial', 45, 'Memoization and tabulation').
+video(graph_algorithms, 'pVfj6mxhdMw', 'Graph Algorithms', 40, 'BFS, DFS, Dijkstra').
+
+% Web Development Videos
+video(html_basics, 'qz0aGYrrlhU', 'HTML Crash Course', 60, 'Complete HTML tutorial').
+video(html_basics, 'UB1O30fR-EE', 'HTML Full Course', 120, 'HTML from scratch').
+video(css_basics, '1PnVor36_40', 'CSS Crash Course', 85, 'Complete CSS tutorial').
+video(css_basics, 'yfoY53QXEnI', 'CSS in 100 Seconds', 2, 'Quick CSS overview').
+video(javascript_basics, 'W6NZfCO5SIk', 'JavaScript Tutorial for Beginners', 60, 'Complete JS fundamentals').
+video(javascript_basics, 'PkZNo7MFNFg', 'Learn JavaScript', 200, 'Full JavaScript course').
+video(dom_manipulation, '0ik6X4DJKCc', 'DOM Manipulation', 40, 'JavaScript DOM tutorial').
+video(events, 'XF1_MlZ5l6M', 'JavaScript Events', 25, 'Event handling in JS').
+video(async_js, '_8gHHBlbziw', 'Async JavaScript Tutorial', 30, 'Callbacks, Promises, Async/Await').
+video(async_js, 'ZYb_ZU8LNxs', 'Promises in JavaScript', 18, 'Understanding promises').
+video(fetch_api, 'cuEtnrL9-H0', 'Fetch API Tutorial', 22, 'Making HTTP requests').
+
+% React Videos
+video(react_basics, 'Ke90Tje7VS0', 'React Tutorial for Beginners', 60, 'Learn React from scratch').
+video(react_basics, 'w7ejDZ8SWv8', 'React JS Crash Course', 90, 'Complete React fundamentals').
+video(react_hooks, 'TNhaISOUy6Q', 'React Hooks Tutorial', 45, 'useState, useEffect, and more').
+video(react_hooks, 'O6P86uwfdR0', 'useEffect Hook Explained', 20, 'Side effects in React').
+video(state_management, 'CVpUuw9XSjY', 'Redux Tutorial', 60, 'State management with Redux').
+video(state_management, '9KJxaFHotqI', 'Context API Tutorial', 25, 'React Context explained').
+
+% Backend Videos
+video(nodejs_basics, 'TlB_eWDSMt4', 'Node.js Tutorial', 60, 'Learn Node.js from scratch').
+video(nodejs_basics, 'ENrzD9HAZK4', 'Node.js Crash Course', 90, 'Complete Node fundamentals').
+video(express_js, 'SccSCuHhOw0', 'Express.js Tutorial', 45, 'Build APIs with Express').
+video(express_js, 'L72fhGm1tfE', 'Express Crash Course', 60, 'Complete Express guide').
+video(rest_api, '-MTSQjw5DrM', 'REST API Tutorial', 35, 'Build RESTful APIs').
+video(databases, 'zsjvFFKOm3c', 'Database Design', 40, 'SQL and NoSQL overview').
+video(sql, 'HXV3zeQKqGY', 'SQL Tutorial', 180, 'Complete SQL course').
+video(mongodb, 'ExcRbA7fy_A', 'MongoDB Crash Course', 75, 'Learn MongoDB').
+video(authentication, 'mbsmsi7l3r4', 'JWT Authentication', 40, 'Implement JWT auth').
+
+% DevOps Videos
+video(git_basics, 'RGOj5yH7evk', 'Git and GitHub Tutorial', 60, 'Version control fundamentals').
+video(git_basics, 'SWYqp7iY_Tc', 'Git Tutorial for Beginners', 30, 'Learn Git basics').
+video(github, 'iv8rSLsi1xo', 'GitHub Tutorial', 40, 'Using GitHub effectively').
+video(docker_basics, 'fqMOX6JJhGo', 'Docker Tutorial', 120, 'Complete Docker guide').
+video(docker_basics, 'gAkwW2tuIqE', 'Docker in 100 Seconds', 2, 'Quick Docker overview').
+video(docker_compose, 'DM65_JyGxCo', 'Docker Compose Tutorial', 45, 'Multi-container apps').
+video(kubernetes, 'X48VuDVv0do', 'Kubernetes Tutorial', 240, 'Complete K8s course').
+video(ci_cd, 'R8_veQiYBjI', 'GitHub Actions Tutorial', 60, 'CI/CD with GitHub Actions').
+
+%==============================================
+% EXERCISES DATABASE
+% Format: exercise(ExerciseId, Topic, Title, Description, StarterCode, TestCases, Hints, XP)
+% TestCases: list of test_case(Input, Expected, Description)
+% Hints: list of hints from basic to solution
+%==============================================
+
+% Variables Exercises
+exercise(var_1, variables, 'Declare Variables', 
+    'Create three variables: name (your name as string), age (your age as number), and isStudent (boolean true).',
+    '// Declare your variables here\nlet name = ;\nlet age = ;\nlet isStudent = ;',
+    [test_case('typeof name', 'string', 'name should be a string'),
+     test_case('typeof age', 'number', 'age should be a number'),
+     test_case('typeof isStudent', 'boolean', 'isStudent should be a boolean')],
+    ['Think about what data type each variable needs',
+     'Strings need quotes, numbers do not',
+     'Booleans are either true or false',
+     'let name = "John"; let age = 25; let isStudent = true;'],
+    25).
+
+exercise(var_2, variables, 'Swap Variables',
+    'Swap the values of two variables a and b without using a third variable.',
+    'let a = 5;\nlet b = 10;\n// Swap a and b here\n',
+    [test_case('a', '10', 'a should be 10 after swap'),
+     test_case('b', '5', 'b should be 5 after swap')],
+    ['You can use arithmetic operations',
+     'Try a = a + b first',
+     'Then b = a - b, then a = a - b',
+     'a = a + b; b = a - b; a = a - b;'],
+    30).
+
+% Conditionals Exercises
+exercise(cond_1, conditionals, 'Grade Calculator',
+    'Write a function that returns letter grade based on score: A (90+), B (80-89), C (70-79), D (60-69), F (below 60).',
+    'function getGrade(score) {\n  // Your code here\n  \n}',
+    [test_case('getGrade(95)', 'A', 'Score 95 should return A'),
+     test_case('getGrade(85)', 'B', 'Score 85 should return B'),
+     test_case('getGrade(75)', 'C', 'Score 75 should return C'),
+     test_case('getGrade(65)', 'D', 'Score 65 should return D'),
+     test_case('getGrade(55)', 'F', 'Score 55 should return F')],
+    ['Use if-else statements to check score ranges',
+     'Start with the highest grade first',
+     'Check if score >= 90, then >= 80, etc.',
+     'if (score >= 90) return "A"; else if (score >= 80) return "B"; else if (score >= 70) return "C"; else if (score >= 60) return "D"; else return "F";'],
+    35).
+
+exercise(cond_2, conditionals, 'FizzBuzz',
+    'Write a function that returns "Fizz" if n is divisible by 3, "Buzz" if divisible by 5, "FizzBuzz" if divisible by both, otherwise return n.',
+    'function fizzBuzz(n) {\n  // Your code here\n  \n}',
+    [test_case('fizzBuzz(15)', 'FizzBuzz', '15 is divisible by both'),
+     test_case('fizzBuzz(9)', 'Fizz', '9 is divisible by 3'),
+     test_case('fizzBuzz(10)', 'Buzz', '10 is divisible by 5'),
+     test_case('fizzBuzz(7)', '7', '7 is not divisible by 3 or 5')],
+    ['Check the "both" condition first',
+     'Use modulo operator (%) to check divisibility',
+     'n % 3 === 0 means divisible by 3',
+     'if (n % 3 === 0 && n % 5 === 0) return "FizzBuzz"; else if (n % 3 === 0) return "Fizz"; else if (n % 5 === 0) return "Buzz"; else return n;'],
+    40).
+
+% Loops Exercises
+exercise(loop_1, loops, 'Sum of Array',
+    'Write a function that returns the sum of all numbers in an array.',
+    'function sumArray(arr) {\n  // Your code here\n  \n}',
+    [test_case('sumArray([1,2,3,4,5])', '15', 'Sum of 1-5 is 15'),
+     test_case('sumArray([10,20,30])', '60', 'Sum of 10,20,30 is 60'),
+     test_case('sumArray([])', '0', 'Empty array sum is 0')],
+    ['Use a for loop to iterate through the array',
+     'Create a sum variable initialized to 0',
+     'Add each element to sum in the loop',
+     'let sum = 0; for (let i = 0; i < arr.length; i++) { sum += arr[i]; } return sum;'],
+    30).
+
+exercise(loop_2, loops, 'Find Maximum',
+    'Write a function that returns the maximum value in an array of numbers.',
+    'function findMax(arr) {\n  // Your code here\n  \n}',
+    [test_case('findMax([1,5,3,9,2])', '9', 'Max of array is 9'),
+     test_case('findMax([-1,-5,-3])', '-1', 'Max of negative numbers'),
+     test_case('findMax([42])', '42', 'Single element array')],
+    ['Start with the first element as max',
+     'Loop through and compare each element',
+     'Update max if current element is larger',
+     'let max = arr[0]; for (let i = 1; i < arr.length; i++) { if (arr[i] > max) max = arr[i]; } return max;'],
+    35).
+
+% Arrays Exercises
+exercise(arr_1, arrays, 'Reverse Array',
+    'Write a function that reverses an array without using the built-in reverse method.',
+    'function reverseArray(arr) {\n  // Your code here\n  \n}',
+    [test_case('reverseArray([1,2,3,4,5]).join(",")', '5,4,3,2,1', 'Reversed array'),
+     test_case('reverseArray(["a","b","c"]).join(",")', 'c,b,a', 'String array reversed')],
+    ['Create a new empty array for result',
+     'Loop from the end of original array to start',
+     'Push each element to the new array',
+     'let result = []; for (let i = arr.length - 1; i >= 0; i--) { result.push(arr[i]); } return result;'],
+    40).
+
+exercise(arr_2, arrays, 'Remove Duplicates',
+    'Write a function that removes duplicate values from an array.',
+    'function removeDuplicates(arr) {\n  // Your code here\n  \n}',
+    [test_case('removeDuplicates([1,2,2,3,3,3]).join(",")', '1,2,3', 'Removes duplicates'),
+     test_case('removeDuplicates([1,1,1]).join(",")', '1', 'All same values')],
+    ['Use a new array to store unique values',
+     'Check if value already exists before adding',
+     'indexOf returns -1 if not found',
+     'let result = []; for (let item of arr) { if (result.indexOf(item) === -1) result.push(item); } return result;'],
+    45).
+
+% Functions Exercises
+exercise(func_1, functions, 'Factorial',
+    'Write a function that calculates the factorial of a number (n! = n * (n-1) * ... * 1).',
+    'function factorial(n) {\n  // Your code here\n  \n}',
+    [test_case('factorial(5)', '120', '5! = 120'),
+     test_case('factorial(0)', '1', '0! = 1'),
+     test_case('factorial(1)', '1', '1! = 1')],
+    ['Base case: 0! and 1! both equal 1',
+     'For n > 1, factorial(n) = n * factorial(n-1)',
+     'You can use iteration or recursion',
+     'if (n <= 1) return 1; return n * factorial(n - 1);'],
+    50).
+
+exercise(func_2, functions, 'Is Prime',
+    'Write a function that returns true if a number is prime, false otherwise.',
+    'function isPrime(n) {\n  // Your code here\n  \n}',
+    [test_case('isPrime(7)', 'true', '7 is prime'),
+     test_case('isPrime(4)', 'false', '4 is not prime'),
+     test_case('isPrime(2)', 'true', '2 is prime'),
+     test_case('isPrime(1)', 'false', '1 is not prime')],
+    ['Numbers less than 2 are not prime',
+     'Check if n is divisible by any number from 2 to sqrt(n)',
+     'If divisible by any number, its not prime',
+     'if (n < 2) return false; for (let i = 2; i <= Math.sqrt(n); i++) { if (n % i === 0) return false; } return true;'],
+    55).
+
+% HTML Exercises
+exercise(html_1, html_basics, 'Create a Webpage',
+    'Create an HTML structure with a heading, paragraph, and an unordered list with 3 items.',
+    '<!DOCTYPE html>\n<html>\n<head>\n  <title>My Page</title>\n</head>\n<body>\n  <!-- Add your HTML here -->\n  \n</body>\n</html>',
+    [test_case('document.querySelector("h1")', 'exists', 'Should have an h1 element'),
+     test_case('document.querySelector("p")', 'exists', 'Should have a paragraph'),
+     test_case('document.querySelectorAll("li").length', '3', 'Should have 3 list items')],
+    ['Use h1 for the heading',
+     'Use p for paragraph',
+     'Use ul and li for the list',
+     '<h1>Welcome</h1><p>This is my page</p><ul><li>Item 1</li><li>Item 2</li><li>Item 3</li></ul>'],
+    30).
+
+% CSS Exercises
+exercise(css_1, css_basics, 'Style a Button',
+    'Create CSS to style a button with blue background, white text, padding, and rounded corners.',
+    '.btn {\n  /* Add your styles here */\n  \n}',
+    [test_case('getComputedStyle(btn).backgroundColor', 'blue', 'Background should be blue'),
+     test_case('getComputedStyle(btn).color', 'white', 'Text should be white'),
+     test_case('getComputedStyle(btn).borderRadius', 'not 0', 'Should have rounded corners')],
+    ['Use background-color for background',
+     'Use color for text color',
+     'Use padding for spacing inside',
+     'Use border-radius for rounded corners',
+     'background-color: blue; color: white; padding: 10px 20px; border-radius: 8px;'],
+    35).
+
+% DOM Manipulation Exercises
+exercise(dom_1, dom_manipulation, 'Change Content',
+    'Write JavaScript to change the text of an element with id "title" to "Hello World".',
+    '// Change the title text\nconst title = document.getElementById("title");\n// Your code here\n',
+    [test_case('document.getElementById("title").textContent', 'Hello World', 'Title should be changed')],
+    ['Use textContent or innerHTML property',
+     'Access the element first',
+     'Then set its textContent',
+     'title.textContent = "Hello World";'],
+    25).
+
+exercise(dom_2, dom_manipulation, 'Add Event Listener',
+    'Add a click event listener to a button with id "myBtn" that shows an alert saying "Clicked!".',
+    '// Add click event listener\nconst btn = document.getElementById("myBtn");\n// Your code here\n',
+    [test_case('typeof btn.onclick', 'function', 'Button should have click handler')],
+    ['Use addEventListener method',
+     'First argument is event type ("click")',
+     'Second argument is the callback function',
+     'btn.addEventListener("click", () => alert("Clicked!"));'],
+    30).
+
+% React Exercises
+exercise(react_1, react_basics, 'Create Component',
+    'Create a React functional component called Greeting that displays "Hello, {name}!" where name is a prop.',
+    'function Greeting(props) {\n  // Return JSX here\n  \n}',
+    [test_case('Greeting({name: "World"})', '<h1>Hello, World!</h1>', 'Should display greeting')],
+    ['Functional components return JSX',
+     'Access props with props.name',
+     'Use curly braces for JavaScript expressions in JSX',
+     'return <h1>Hello, {props.name}!</h1>;'],
+    40).
+
+exercise(react_2, react_hooks, 'Counter with useState',
+    'Create a Counter component with a count state that increments when a button is clicked.',
+    'function Counter() {\n  // Use useState hook\n  \n  return (\n    <div>\n      {/* Display count and button */}\n    </div>\n  );\n}',
+    [test_case('Counter state updates', 'increments', 'Count should increment on click')],
+    ['Import useState from React',
+     'const [count, setCount] = useState(0)',
+     'Use onClick to call setCount',
+     'const [count, setCount] = useState(0); return (<div><p>{count}</p><button onClick={() => setCount(count + 1)}>+</button></div>);'],
+    50).
+
+%==============================================
 % INPUT VALIDATION & SANITIZATION
 %==============================================
 
@@ -433,8 +746,9 @@ handle_health(_Request) :-
         status: "healthy",
         timestamp: Timestamp,
         service: "job-ready-backend",
-        version: "1.0.0",
-        database: "connected"
+        version: "2.0.0",
+        database: "connected",
+        features: ["videos", "exercises", "hints", "console", "progress-tracking"]
     }).
 
 % Generate learning path
@@ -660,6 +974,256 @@ handle_get_resources(Request) :-
     ).
 
 %==============================================
+% NEW INTERACTIVE LEARNING API HANDLERS
+%==============================================
+
+% Get video lessons for a topic
+handle_get_video(Request) :- 
+    check_rate_limit(Request, get_video),
+    cors_enable_with_origin(Request),
+    catch(
+        (http_read_json_dict(Request, Data),
+         require_field(Data, topic),
+         sanitize_input(Data.topic, Topic),
+         atom_string(TopicAtom, Topic),
+         findall(json{
+             videoId: VideoId,
+             title: Title,
+             duration: Duration,
+             description: Desc
+         }, video(TopicAtom, VideoId, Title, Duration, Desc), Videos),
+         reply_json_dict(json{success: true, videos: Videos, topic: Topic})),
+        Error,
+        (log_error(Error),
+         reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
+    ).
+
+% Get exercises for a topic
+handle_get_exercises(Request) :- 
+    check_rate_limit(Request, get_exercises),
+    cors_enable_with_origin(Request),
+    catch(
+        (http_read_json_dict(Request, Data),
+         require_field(Data, topic),
+         sanitize_input(Data.topic, Topic),
+         atom_string(TopicAtom, Topic),
+         findall(json{
+             id: ExIdStr,
+             title: Title,
+             description: Desc,
+             starterCode: Code,
+             xp: XP,
+             testCount: TestCount
+         }, (
+             exercise(ExId, TopicAtom, Title, Desc, Code, Tests, _, XP),
+             atom_string(ExId, ExIdStr),
+             length(Tests, TestCount)
+         ), Exercises),
+         reply_json_dict(json{success: true, exercises: Exercises, topic: Topic})),
+        Error,
+        (log_error(Error),
+         reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
+    ).
+
+% Submit exercise and record attempt
+handle_submit_exercise(Request) :- 
+    check_rate_limit(Request, submit_exercise),
+    cors_enable_with_origin(Request),
+    catch(
+        (http_read_json_dict(Request, Data),
+         require_field(Data, userId),
+         require_field(Data, exerciseId),
+         require_field(Data, code),
+         sanitize_input(Data.userId, UserId),
+         validate_user_id(UserId),
+         atom_string(ExerciseIdAtom, Data.exerciseId),
+         atom_string(CodeAtom, Data.code),
+         (get_dict(passed, Data, PassedBool) -> true ; PassedBool = false),
+         (PassedBool == true -> PassedAtom = true ; PassedAtom = false),
+         get_time(Timestamp),
+         % Record the attempt
+         assert_user_exercise_attempt(UserId, ExerciseIdAtom, CodeAtom, PassedAtom, Timestamp),
+         % Update last activity
+         retractall_user_last_activity(UserId, _),
+         assert_user_last_activity(UserId, Timestamp),
+         % If passed, award XP
+         (PassedAtom == true ->
+             (exercise(ExerciseIdAtom, _, _, _, _, _, _, ExerciseXP),
+              (user_xp(UserId, CurrentXP) ->
+                  (NewXP is CurrentXP + ExerciseXP,
+                   retractall_user_xp(UserId, _),
+                   assert_user_xp(UserId, NewXP))
+              ; (assert_user_xp(UserId, ExerciseXP), NewXP = ExerciseXP)),
+              XPGained = ExerciseXP)
+         ; (NewXP = 0, XPGained = 0, (user_xp(UserId, NewXP) -> true ; NewXP = 0))),
+         db_sync(gc),
+         log_info('Exercise attempt recorded'),
+         reply_json_dict(json{
+             success: true,
+             passed: PassedBool,
+             xpGained: XPGained,
+             totalXp: NewXP,
+             message: "Attempt recorded"
+         })),
+        Error,
+        (log_error(Error),
+         reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
+    ).
+
+% Get hints for an exercise
+handle_get_hints(Request) :- 
+    check_rate_limit(Request, get_hints),
+    cors_enable_with_origin(Request),
+    catch(
+        (http_read_json_dict(Request, Data),
+         require_field(Data, exerciseId),
+         atom_string(ExerciseIdAtom, Data.exerciseId),
+         (get_dict(hintLevel, Data, HintLevel) -> true ; HintLevel = 0),
+         % Get user ID if provided to track hint usage
+         (get_dict(userId, Data, UserIdRaw) ->
+             (sanitize_input(UserIdRaw, UserId),
+              validate_user_id(UserId),
+              assert_user_hint_used(UserId, ExerciseIdAtom, HintLevel),
+              db_sync(gc))
+         ; true),
+         % Get the hints for this exercise
+         exercise(ExerciseIdAtom, _, _, _, _, _, AllHints, _),
+         length(AllHints, TotalHints),
+         MaxLevel is min(HintLevel + 1, TotalHints),
+         % Get hints up to the requested level
+         findall(Hint, (
+             nth0(Idx, AllHints, Hint),
+             Idx < MaxLevel
+         ), AvailableHints),
+         % Calculate hasMoreHints as a proper boolean
+         Remaining is TotalHints - 1,
+         (HintLevel < Remaining -> HasMore = true ; HasMore = false),
+         reply_json_dict(json{
+             success: true,
+             hints: AvailableHints,
+             currentLevel: HintLevel,
+             totalHints: TotalHints,
+             hasMoreHints: HasMore
+         })),
+        Error,
+        (log_error(Error),
+         reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
+    ).
+
+% Run code (mock execution - frontend handles actual JS execution)
+handle_run_code(Request) :- 
+    check_rate_limit(Request, run_code),
+    cors_enable_with_origin(Request),
+    catch(
+        (http_read_json_dict(Request, Data),
+         require_field(Data, code),
+         require_field(Data, exerciseId),
+         atom_string(ExerciseIdAtom, Data.exerciseId),
+         % Get test cases for the exercise
+         exercise(ExerciseIdAtom, _, _, _, _, TestCases, _, _),
+         % Convert test cases to JSON
+         findall(json{
+             input: Input,
+             expected: Expected,
+             description: Desc
+         }, member(test_case(Input, Expected, Desc), TestCases), TestsJson),
+         reply_json_dict(json{
+             success: true,
+             tests: TestsJson,
+             message: "Tests retrieved for client-side execution"
+         })),
+        Error,
+        (log_error(Error),
+         reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
+    ).
+
+% Get exercise attempts for a user
+handle_get_exercise_attempts(Request) :- 
+    check_rate_limit(Request, get_exercise_attempts),
+    cors_enable_with_origin(Request),
+    catch(
+        (http_read_json_dict(Request, Data),
+         require_field(Data, userId),
+         sanitize_input(Data.userId, UserId),
+         validate_user_id(UserId),
+         % Get exercise ID filter if provided
+         (get_dict(exerciseId, Data, ExIdRaw) ->
+             (atom_string(ExIdFilter, ExIdRaw),
+              findall(json{
+                  exerciseId: ExIdStr,
+                  passed: PassedBool,
+                  timestamp: TS
+              }, (
+                  user_exercise_attempt(UserId, ExIdFilter, _, Passed, TS),
+                  atom_string(ExIdFilter, ExIdStr),
+                  (Passed == true -> PassedBool = true ; PassedBool = false)
+              ), Attempts))
+         ; findall(json{
+              exerciseId: ExIdStr,
+              passed: PassedBool,
+              timestamp: TS
+          }, (
+              user_exercise_attempt(UserId, ExId, _, Passed, TS),
+              atom_string(ExId, ExIdStr),
+              (Passed == true -> PassedBool = true ; PassedBool = false)
+          ), Attempts)),
+         reply_json_dict(json{success: true, attempts: Attempts})),
+        Error,
+        (log_error(Error),
+         reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
+    ).
+
+% Get detailed progress with all statistics
+handle_get_detailed_progress(Request) :- 
+    check_rate_limit(Request, get_detailed_progress),
+    cors_enable_with_origin(Request),
+    catch(
+        (http_parameters(Request, [userId(UserIdRaw, [])]),
+         sanitize_input(UserIdRaw, UserId),
+         validate_user_id(UserId),
+         % Basic progress
+         (user_path(UserId, Path) -> true ; Path = []),
+         findall(T, user_progress(UserId, T, completed), Completed),
+         length(Path, Total),
+         length(Completed, CompletedCount),
+         (Total > 0 -> Progress is (CompletedCount * 100) / Total ; Progress = 0),
+         (user_xp(UserId, XP) -> true ; XP = 0),
+         (user_streak(UserId, Streak) -> true ; Streak = 0),
+         (user_last_activity(UserId, LastActivity) -> true ; LastActivity = 0),
+         % Exercise attempts statistics
+         findall(1, user_exercise_attempt(UserId, _, _, _, _), AllAttempts),
+         length(AllAttempts, TotalAttempts),
+         findall(1, user_exercise_attempt(UserId, _, _, true, _), PassedAttempts),
+         length(PassedAttempts, TotalPassed),
+         % Videos watched
+         findall(V, user_video_watched(UserId, _, V, _), VideosWatched),
+         length(VideosWatched, VideoCount),
+         % Hints used
+         findall(1, user_hint_used(UserId, _, _), HintsUsed),
+         length(HintsUsed, HintCount),
+         maplist(atom_string, Completed, CompletedStr),
+         reply_json_dict(json{
+             success: true,
+             totalSkills: Total,
+             completed: CompletedCount,
+             progress: Progress,
+             xp: XP,
+             streak: Streak,
+             lastActivity: LastActivity,
+             completedSkills: CompletedStr,
+             statistics: json{
+                 totalExerciseAttempts: TotalAttempts,
+                 exercisesPassed: TotalPassed,
+                 videosWatched: VideoCount,
+                 hintsUsed: HintCount
+             }
+         })),
+        Error,
+        (log_error(Error),
+         reply_json_dict(json{success: false, message: "Server error"}, [status(500)]))
+    ).
+
+%==============================================
 % HELPER PREDICATES
 %==============================================
 
@@ -739,16 +1303,21 @@ skill_with_status(UserId, Skill, json{
     findall(P, prerequisite(P, Skill), Prereqs),
     skill(Skill, Domain, Difficulty, Hours, XP).
 
-% CORS helper
+% CORS helper - adds CORS headers to response
+% This is a simplified CORS implementation compatible with SWI-Prolog's HTTP server
 cors_enable_with_origin(Request) :-
     (memberchk(origin(Origin), Request) -> true ; Origin = 'http://localhost:3000'),
-    setting(allowed_origins, AllowedOrigins),
-    (member(Origin, AllowedOrigins) -> AllowedOrigin = Origin ; AllowedOrigin = 'http://localhost:3000'),
-    cors_enable(Request, [
-        methods([get,post,options]), 
-        origins([AllowedOrigin]), 
-        headers(['content-type','authorization'])
-    ]).
+    get_config(allowed_origins, AllowedOrigins),
+    (member(Origin, AllowedOrigins) -> AllowedOrigin = Origin 
+    ; AllowedOrigin = 'http://localhost:3000'),
+    % Set CORS headers using format to current output
+    format('Access-Control-Allow-Origin: ~w~n', [AllowedOrigin]),
+    format('Access-Control-Allow-Methods: GET, POST, OPTIONS~n', []),
+    format('Access-Control-Allow-Headers: Content-Type, Authorization~n', []),
+    format('Access-Control-Max-Age: 86400~n', []).
+
+% Alternative CORS handler that just succeeds (headers handled by nginx in production)
+cors_enable_simple(_Request) :- true.
 
 %==============================================
 % SERVER STARTUP
