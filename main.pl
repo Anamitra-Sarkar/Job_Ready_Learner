@@ -11,17 +11,23 @@ Version: 2.0.0
 :- use_module(library(http/http_dispatch)).
 :- use_module(library(http/http_parameters)).
 :- use_module(library(http/http_json)).
-:- use_module(library(http/cors)).
 :- use_module(library(http/json)).
 :- use_module(library(http/http_header)).
 :- use_module(library(persistency)).
-:- use_module(library(settings)).
 
-% Production settings
-:- setting(allowed_origins, list, ['http://localhost:3000', 'http://localhost']).
-:- setting(enable_rate_limit, boolean, true).
-:- setting(max_requests_per_minute, integer, 60).
-:- setting(log_level, atom, info). % debug, info, warn, error
+% Dynamic predicates for configuration
+:- dynamic config_setting/2.
+
+% Initialize config settings
+:- assertz(config_setting(allowed_origins, ['http://localhost:3000', 'http://localhost', '*'])).
+:- assertz(config_setting(enable_rate_limit, true)).
+:- assertz(config_setting(max_requests_per_minute, 60)).
+:- assertz(config_setting(log_level, info)).
+
+% Config setting getter
+get_config(Key, Value) :-
+    config_setting(Key, Value), !.
+get_config(_, _) :- fail.
 
 % Dynamic predicates for rate limiting
 :- dynamic request_count/3.  % request_count(IP, Endpoint, Count)
@@ -38,7 +44,7 @@ Version: 2.0.0
 :- http_handler('/api/skill-tree', handle_skill_tree, [method(post)]).
 :- http_handler('/api/resources', handle_get_resources, [method(post)]).
 :- http_handler('/api/health', handle_health, [method(get)]).
-:- http_handler(root(api/), handle_options, [method(options), prefix]).
+:- http_handler('/api/', handle_options, [method(options), prefix]).
 
 % HTTP Route Handlers - New Interactive Learning Features
 :- http_handler('/api/get-video', handle_get_video, [method(post)]).
@@ -52,17 +58,17 @@ Version: 2.0.0
 % CORS preflight handler
 handle_options(Request) :-
     cors_enable_with_origin(Request),
-    throw(http_reply(no_content)).
+    format('Status: 204 No Content~n~n', []).
 
 % Rate limiting implementation
+check_rate_limit(_Request, _Endpoint) :-
+    get_config(enable_rate_limit, false), !.
 check_rate_limit(Request, Endpoint) :-
-    setting(enable_rate_limit, false), !.
-check_rate_limit(Request, Endpoint) :-
-    setting(enable_rate_limit, true),
+    get_config(enable_rate_limit, true),
     (memberchk(peer(IP), Request) -> true ; IP = unknown),
     get_time(Now),
     cleanup_old_counts(Now),
-    setting(max_requests_per_minute, MaxRequests),
+    get_config(max_requests_per_minute, MaxRequests),
     (request_count(IP, Endpoint, Count) ->
         (Count >= MaxRequests ->
             throw(http_reply(too_many_requests(
@@ -109,17 +115,17 @@ initialize_db :-
     log_info('Database initialized: data/user_data.db').
 
 % Logging utilities
-log_debug(Message) :- setting(log_level, debug), !, format('DEBUG: ~w~n', [Message]).
+log_debug(Message) :- get_config(log_level, debug), !, format('DEBUG: ~w~n', [Message]).
 log_debug(_).
 
 log_info(Message) :- 
-    setting(log_level, Level),
+    get_config(log_level, Level),
     member(Level, [debug, info]), !,
     format('INFO: ~w~n', [Message]).
 log_info(_).
 
 log_warn(Message) :- 
-    setting(log_level, Level),
+    get_config(log_level, Level),
     member(Level, [debug, info, warn]), !,
     format('WARN: ~w~n', [Message]).
 log_warn(_).
@@ -1088,12 +1094,15 @@ handle_get_hints(Request) :-
              nth0(Idx, AllHints, Hint),
              Idx < MaxLevel
          ), AvailableHints),
+         % Calculate hasMoreHints as a proper boolean
+         Remaining is TotalHints - 1,
+         (HintLevel < Remaining -> HasMore = true ; HasMore = false),
          reply_json_dict(json{
              success: true,
              hints: AvailableHints,
              currentLevel: HintLevel,
              totalHints: TotalHints,
-             hasMoreHints: HintLevel < TotalHints - 1
+             hasMoreHints: HasMore
          })),
         Error,
         (log_error(Error),
@@ -1293,16 +1302,17 @@ skill_with_status(UserId, Skill, json{
     findall(P, prerequisite(P, Skill), Prereqs),
     skill(Skill, Domain, Difficulty, Hours, XP).
 
-% CORS helper
+% CORS helper - adds CORS headers to response
 cors_enable_with_origin(Request) :-
-    (memberchk(origin(Origin), Request) -> true ; Origin = 'http://localhost:3000'),
-    setting(allowed_origins, AllowedOrigins),
-    (member(Origin, AllowedOrigins) -> AllowedOrigin = Origin ; AllowedOrigin = 'http://localhost:3000'),
-    cors_enable(Request, [
-        methods([get,post,options]), 
-        origins([AllowedOrigin]), 
-        headers(['content-type','authorization'])
-    ]).
+    (memberchk(origin(Origin), Request) -> true ; Origin = '*'),
+    get_config(allowed_origins, AllowedOrigins),
+    (member(Origin, AllowedOrigins) -> AllowedOrigin = Origin 
+    ; member('*', AllowedOrigins) -> AllowedOrigin = '*'
+    ; AllowedOrigin = 'http://localhost:3000'),
+    format('Access-Control-Allow-Origin: ~w~n', [AllowedOrigin]),
+    format('Access-Control-Allow-Methods: GET, POST, OPTIONS~n', []),
+    format('Access-Control-Allow-Headers: Content-Type, Authorization~n', []),
+    format('Access-Control-Max-Age: 86400~n', []).
 
 %==============================================
 % SERVER STARTUP
