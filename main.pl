@@ -21,7 +21,12 @@ Version: 2.0.0
 
 % Initialize config settings
 % Note: In development, '*' allows all origins. For production, replace with your actual domain.
-:- assertz(config_setting(allowed_origins, ['http://localhost:3000', 'http://localhost', 'http://localhost:8080'])).
+:- assertz(config_setting(allowed_origins, [
+    'http://localhost:3000', 
+    'http://localhost', 
+    'http://localhost:8080',
+    'https://job-ready-learner.vercel.app'
+])).
 :- assertz(config_setting(enable_rate_limit, true)).
 :- assertz(config_setting(max_requests_per_minute, 60)).
 :- assertz(config_setting(log_level, info)).
@@ -1435,16 +1440,21 @@ cors_enable_simple(_Request) :- true.
 
 start_server(Port) :-
     initialize_db,
-    http_server(http_dispatch, [port(Port)]),
+    http_server(http_dispatch, [port(Port), ip('0.0.0.0')]),
     format('~n╔════════════════════════════════════════════════════════════╗~n', []),
     format('║     🚀 JOB READY PLATFORM - PRODUCTION BACKEND READY      ║~n', []),
     format('╚════════════════════════════════════════════════════════════╝~n~n', []),
-    format('   📡 Server:           http://localhost:~w~n', [Port]),
+    format('   📡 Server:           http://0.0.0.0:~w~n', [Port]),
     format('   🔗 API Endpoints:    /api/*~n', []),
     format('   💾 Database:         data/user_data.db~n', []),
     format('   🛡️  Rate Limiting:    ENABLED (60 req/min)~n', []),
     format('   🔒 Input Validation: ENABLED~n', []),
     format('   📊 Logging Level:    INFO~n', []),
-    format('~n   ✨ All systems operational! Ready for production!~n~n', []).
+    format('   🌐 Binding:          0.0.0.0 (all interfaces)~n', []),
+    format('~n   ✨ All systems operational! Ready for production!~n~n', []),
+    % Keep server running indefinitely by waiting for shutdown message
+    % This is necessary because http_server runs in a separate thread
+    % Without this, the main thread would exit and stop the server
+    catch(thread_get_message(_), _, true).
 
 :- initialization(start_server(8080)).

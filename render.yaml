@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: job-ready-backend
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: PROLOG_STACK_LIMIT
+        value: 4g
+      - key: LOG_LEVEL
+        value: info
+      - key: RATE_LIMIT_ENABLED
+        value: true
+      - key: MAX_REQUESTS_PER_MINUTE
+        value: 60
+      - key: PORT
+        value: 8080
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: backend-data
+      mountPath: /app/data
+      sizeGB: 1

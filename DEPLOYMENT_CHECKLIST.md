@@ -29,13 +29,19 @@ DOCKER TESTING:
 □ No CORS errors
 
 PRODUCTION DEPLOYMENT:
+□ Backend deployed to Render/Fly.io/Railway
+□ Backend URL copied and saved
+□ vercel.json updated with backend URL
+□ Frontend redeployed to Vercel
 □ Domain configured
-□ SSL certificate installed
-□ Firewall rules configured
+□ SSL certificate installed (automatic on Vercel/Render)
+□ Firewall rules configured (if needed)
 □ Backup strategy in place
-□ Monitoring set up
+□ GitHub Actions secrets configured (BACKEND_URL)
+□ Monitoring workflows enabled
 □ Error logging configured
 □ Rate limiting enabled
+□ CORS configured for production domain
 
 SCALABILITY:
 □ Test with multiple concurrent users

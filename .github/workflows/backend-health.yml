@@ -1,0 +1,93 @@
+name: Backend Health Check
+
+on:
+  schedule:
+    # Run every 14 minutes to keep Render free tier awake
+    # Render free tier sleeps after 15 minutes of inactivity
+    # This ensures the backend is always responsive for users
+    # NOTE: Disable this workflow if using Render paid tier (always-on)
+    # or if GitHub Actions minutes are a concern
+    - cron: '*/14 * * * *'
+  workflow_dispatch:  # Allow manual trigger
+  push:
+    branches:
+      - main
+    paths:
+      - 'main.pl'
+      - 'Dockerfile'
+      - 'render.yaml'
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Wait for backend (if just deployed)
+        run: sleep 10
+      
+      - name: Ping Backend Health Endpoint
+        run: |
+          # Replace with your actual backend URL after deployment
+          BACKEND_URL="${{ secrets.BACKEND_URL }}"
+          
+          if [ -z "$BACKEND_URL" ]; then
+            echo "⚠️ BACKEND_URL secret not set. Skipping health check."
+            echo "Set BACKEND_URL in repository secrets after backend deployment."
+            exit 0
+          fi
+          
+          echo "🔍 Checking backend health at: $BACKEND_URL"
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" "$BACKEND_URL/api/health" || echo "000")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "Response code: $HTTP_CODE"
+          echo "Response body: $BODY"
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Backend is healthy!"
+            exit 0
+          else
+            echo "❌ Backend health check failed with code: $HTTP_CODE"
+            exit 1
+          fi
+      
+      - name: Test Career Paths Endpoint
+        if: success()
+        run: |
+          BACKEND_URL="${{ secrets.BACKEND_URL }}"
+          
+          if [ -z "$BACKEND_URL" ]; then
+            exit 0
+          fi
+          
+          echo "🔍 Testing career paths endpoint..."
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" "$BACKEND_URL/api/career-paths")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Career paths endpoint working!"
+            exit 0
+          else
+            echo "❌ Career paths endpoint failed with code: $HTTP_CODE"
+            exit 1
+          fi
+      
+      - name: Notify Success
+        if: success()
+        run: |
+          echo "🎉 All backend health checks passed!"
+          echo "Backend is ready and responding correctly."
+      
+      - name: Notify Failure
+        if: failure()
+        run: |
+          echo "⚠️ Backend health check failed!"
+          echo "Check Render dashboard for logs."

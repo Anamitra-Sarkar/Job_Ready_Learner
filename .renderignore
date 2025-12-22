@@ -1,0 +1,22 @@
+# Files to ignore when deploying to Render
+.git
+.gitignore
+*.md
+!DEPLOYMENT.md
+.env.example
+README.md
+QUICK_REFERENCE.txt
+files_summary.csv
+docker-compose.yml
+nginx.conf
+backup.sh
+backup.bat
+restore.sh
+start.sh
+start.bat
+docker-start.sh
+backups/
+logs/
+.vscode/
+.idea/
+*.log
