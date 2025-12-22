@@ -10,7 +10,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://job-ready-learner.vercel.app//api/:path*"
+      "destination": "job-ready-learner-j23dkt3zj-anamitra-sarkars-projects.vercel.app//api/:path*"
     }
   ],
   "headers": [
