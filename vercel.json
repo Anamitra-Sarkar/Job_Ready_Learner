@@ -13,6 +13,7 @@
       "destination": "https://YOUR_BACKEND_URL_HERE.onrender.com/api/:path*"
     }
   ],
+  "comment": "IMPORTANT: Replace 'YOUR_BACKEND_URL_HERE' with your actual backend URL from Render/Fly.io/Railway before deployment. Example: https://job-ready-backend-abc123.onrender.com",
   "headers": [
     {
       "source": "/(.*)",

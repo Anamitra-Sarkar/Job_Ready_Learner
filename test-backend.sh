@@ -44,7 +44,12 @@ BODY=$(echo "$PATHS_RESPONSE" | sed '$d')
 
 if [ "$HTTP_CODE" = "200" ]; then
     echo -e "${GREEN}✓ PASS${NC} - Career paths returned 200 OK"
-    PATHS_COUNT=$(echo "$BODY" | grep -o '"id"' | wc -l)
+    # Use jq if available, otherwise fallback to grep
+    if command -v jq &> /dev/null; then
+        PATHS_COUNT=$(echo "$BODY" | jq -r '.paths | length')
+    else
+        PATHS_COUNT=$(echo "$BODY" | grep -o '"id":[[:space:]]*"[^"]*"' | wc -l)
+    fi
     echo "Found $PATHS_COUNT career paths"
 else
     echo -e "${RED}✗ FAIL${NC} - Career paths returned $HTTP_CODE"
@@ -78,7 +83,12 @@ BODY=$(echo "$GENERATE_RESPONSE" | sed '$d')
 
 if [ "$HTTP_CODE" = "200" ]; then
     echo -e "${GREEN}✓ PASS${NC} - Path generation returned 200 OK"
-    SKILLS_COUNT=$(echo "$BODY" | grep -o '"name"' | wc -l)
+    # Use jq if available, otherwise fallback to grep
+    if command -v jq &> /dev/null; then
+        SKILLS_COUNT=$(echo "$BODY" | jq -r '.path | length')
+    else
+        SKILLS_COUNT=$(echo "$BODY" | grep -o '"name":[[:space:]]*"[^"]*"' | wc -l)
+    fi
     echo "Generated learning path with $SKILLS_COUNT skills"
 else
     echo -e "${YELLOW}⚠ WARNING${NC} - Path generation returned $HTTP_CODE"

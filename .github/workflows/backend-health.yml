@@ -3,6 +3,10 @@ name: Backend Health Check
 on:
   schedule:
     # Run every 14 minutes to keep Render free tier awake
+    # Render free tier sleeps after 15 minutes of inactivity
+    # This ensures the backend is always responsive for users
+    # NOTE: Disable this workflow if using Render paid tier (always-on)
+    # or if GitHub Actions minutes are a concern
     - cron: '*/14 * * * *'
   workflow_dispatch:  # Allow manual trigger
   push:

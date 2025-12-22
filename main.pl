@@ -1452,6 +1452,9 @@ start_server(Port) :-
     format('   📊 Logging Level:    INFO~n', []),
     format('   🌐 Binding:          0.0.0.0 (all interfaces)~n', []),
     format('~n   ✨ All systems operational! Ready for production!~n~n', []),
-    thread_get_message(_).  % Keep server running
+    % Keep server running indefinitely by waiting for shutdown message
+    % This is necessary because http_server runs in a separate thread
+    % Without this, the main thread would exit and stop the server
+    catch(thread_get_message(_), _, true).
 
 :- initialization(start_server(8080)).
