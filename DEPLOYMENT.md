@@ -185,6 +185,44 @@ The `vercel.json` includes security headers:
 
 ---
 
+## 🤖 Automated Monitoring with GitHub Actions
+
+### Setup Keep-Alive Health Checks
+
+The repository includes GitHub Actions workflows to:
+1. Keep your Render free tier backend awake (runs every 14 minutes)
+2. Verify Docker builds on every code change
+3. Test API endpoints automatically
+
+### Configure GitHub Secrets
+
+After deploying the backend to Render:
+
+1. Go to your GitHub repository
+2. Navigate to **Settings** → **Secrets and variables** → **Actions**
+3. Click "New repository secret"
+4. Add:
+   - **Name**: `BACKEND_URL`
+   - **Value**: Your Render backend URL (e.g., `https://job-ready-backend-xxxx.onrender.com`)
+5. Click "Add secret"
+
+### Verify Workflows
+
+1. Go to **Actions** tab in your repository
+2. You should see:
+   - **Docker Build Verification** - Runs on every push
+   - **Backend Health Check** - Runs every 14 minutes
+3. Check that workflows are running successfully
+
+### Manual Trigger
+
+You can manually trigger the health check:
+1. Go to **Actions** → **Backend Health Check**
+2. Click "Run workflow" dropdown
+3. Select branch and click "Run workflow"
+
+---
+
 ## 🚨 Troubleshooting
 
 ### Backend Issues
