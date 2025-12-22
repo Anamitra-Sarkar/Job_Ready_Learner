@@ -1457,4 +1457,6 @@ start_server(Port) :-
     % Without this, the main thread would exit and stop the server
     catch(thread_get_message(_), _, true).
 
-:- initialization(start_server(8080)).
+% Ensure server starts when file is loaded in container
+% Uses 'main' initialization type for deterministic startup
+:- initialization(start_server(8080), main).
