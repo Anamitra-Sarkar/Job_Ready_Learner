@@ -46,5 +46,5 @@ ENV PROLOG_STACK_LIMIT=4g \
     RATE_LIMIT_ENABLED=true \
     MAX_REQUESTS_PER_MINUTE=60
 
-# Start the server
-CMD ["swipl", "-s", "main.pl"]
+# Start the server in quiet mode for deterministic startup
+CMD ["swipl", "-q", "-s", "main.pl"]
