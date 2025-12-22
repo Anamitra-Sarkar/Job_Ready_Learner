@@ -97,6 +97,40 @@ chmod +x docker-start.sh
 
 ---
 
+## 🌐 Production Deployment
+
+The platform is designed for cloud deployment with separate frontend and backend services.
+
+### Live Demo
+
+- **Frontend**: https://job-ready-learner.vercel.app (Vercel)
+- **Backend**: Deploy to Render/Fly.io/Railway (see guide below)
+
+### Quick Deploy
+
+1. **Deploy Backend** (Render - Free Tier):
+   - Sign up at [render.com](https://render.com)
+   - Create new Web Service from this GitHub repo
+   - Use `render.yaml` configuration (auto-detected)
+   - Copy backend URL: `https://your-backend.onrender.com`
+
+2. **Update Frontend**:
+   - Edit `vercel.json` and replace `YOUR_BACKEND_URL_HERE`
+   - Push to GitHub (auto-deploys to Vercel)
+
+3. **Verify Deployment**:
+   ```bash
+   # Test backend
+   curl https://your-backend.onrender.com/api/health
+   
+   # Test frontend
+   open https://job-ready-learner.vercel.app
+   ```
+
+📖 **Complete Guide**: See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed step-by-step instructions.
+
+---
+
 ## 📁 Project Structure
 
 Job_Ready_Learner/
